@@ -1,0 +1,189 @@
+import { C64, SIDheader } from "../src/C64"
+import { SID } from "../src/SID"
+import { VIC } from "../src/VIC"
+import { CIA } from "../src/CIA"
+import { MEM } from "../src/MEM"
+
+const samplerate = 44100
+
+const filename = "tests/files/Cybernoid.sid"
+const filesize = 4734
+const subtune = 0
+
+describe("init", () => {
+    const c64 = new C64(samplerate)
+    let SIDfileData: Uint8Array
+    let SIDheader: Uint8Array | undefined
+
+    it("instantiate", () => {
+        expect(c64).toBeInstanceOf(C64)
+
+        expect(C64.SID[1]).toBeInstanceOf(SID)
+
+        expect(C64.CIA[1]).toBeInstanceOf(CIA)
+        expect(C64.CIA[2]).toBeInstanceOf(CIA)
+
+        expect(C64.VIC).toBeInstanceOf(VIC)
+    })
+
+    it("loadSIDfile", () => {
+        SIDfileData = loadSIDfile(filename)
+        expect(SIDfileData).not.toBeNull()
+
+        expect(SIDfileData.length).toEqual(filesize)
+    })
+
+    it("processSIDfile", () => {
+        SIDheader = processSIDfile(c64, SIDfileData)
+        expect(SIDheader).not.toBeUndefined()
+
+        expect(C64.RealSIDmode).toBeFalsy()
+
+        expect(C64.LoadAddress).toEqual(124)
+        expect(C64.EndAddress).toEqual(4858)
+
+        expect(C64.PSIDdigiMode).toBeFalsy()
+    })
+
+    it("initSIDtune", () => {
+        initSIDtune(c64, SIDheader!, subtune)
+
+        expect(C64.Finished).toBeTruthy()
+        expect(C64.Returned).toBeTruthy()
+
+        expect(C64.SubTune).toEqual(1)
+        expect(C64.CPU.A).toEqual(0)
+
+        expect(C64.InitAddress).toEqual(44544)
+        expect(C64.PlayAddress).toEqual(44550)
+
+        expect(C64.RAMbank[1]).toEqual(0x00)
+
+        expect(C64.TimerSource).toEqual(0)
+        expect(C64.FrameCycles).toEqual(19656)
+
+        expect(C64.FrameCycleCnt).toEqual(0)
+        expect(C64.SampleCycleCnt).toEqual(0)
+    })
+
+    it("generateSound", () => {
+        const len = 100
+        const buf = new Int16Array(len)
+
+        generateSound(buf, len)
+
+        console.log(buf)
+    })
+})
+
+const initSIDtune = (c64: C64, filedata: Uint8Array, subtune: number) => { //subtune: 1..255
+    const PowersOf2: number[] = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80];
+    let InitTimeout: number = 10000000; //allowed instructions, value should be selected to allow for long-running memory-copiers in init-routines (e.g. Synth Sample)
+
+    if (subtune == 0) subtune = 1;
+    else if (subtune > filedata[SIDheader.SubtuneAmount]) subtune = filedata[SIDheader.SubtuneAmount];
+    C64.SubTune = subtune;
+
+    c64.setC64(); c64.initC64(); //cRSID_writeMemC64(C64,0xD418,0x0F); //set C64 hardware and init (reset) it
+
+    //determine init-address:
+    C64.InitAddress = ((filedata[SIDheader.InitAddressH]) << 8) + (filedata[SIDheader.InitAddressL]); //get info from BASIC-startupcode for some tunes
+    if (C64.RAMbank[1] == 0x37) { //are there SIDs with routine under IO area? some PSIDs don't set bank-registers themselves
+        if ((0xA000 <= C64.InitAddress && C64.InitAddress < 0xC000)
+            || (C64.LoadAddress < 0xC000 && C64.EndAddress >= 0xA000)) C64.RAMbank[1] = 0x36;
+        else if (C64.InitAddress >= 0xE000 || C64.EndAddress >= 0xE000) C64.RAMbank[1] = 0x35;
+    }
+    C64.CPU.initCPU(C64.InitAddress); //prepare init-routine call
+    C64.CPU.A = subtune - 1;
+
+    if (!C64.RealSIDmode) {
+        //call init-routine:
+        for (InitTimeout = 10000000; InitTimeout > 0; InitTimeout--) { if (C64.CPU.emulateCPU() >= 0xFE) break; } //give error when timed out?
+    }
+
+    //determine timing-source, if CIA, replace FrameCycles previouisly set to VIC-timing
+    if (subtune > 32) C64.TimerSource = C64.SIDheader[SIDheader.SubtuneTimeSources + 0] & 0x80; //subtunes above 32 should use subtune32's timing
+    else C64.TimerSource = C64.SIDheader[SIDheader.SubtuneTimeSources + (32 - subtune) >> 3] & PowersOf2[(subtune - 1) & 7];
+    if (C64.TimerSource || C64.IObankWR[0xDC05] != 0x40 || C64.IObankWR[0xDC04] != 0x24) { //CIA1-timing (probably multispeed tune)
+        C64.FrameCycles = ((C64.IObankWR[0xDC04] + (C64.IObankWR[0xDC05] << 8))); //<< 4) / C64->ClockRatio;
+        C64.TimerSource = 1; //if init-routine changed DC04 or DC05, assume CIA-timing
+    }
+
+    //determine playaddress:
+    C64.PlayAddress = (filedata[SIDheader.PlayAddressH] << 8) + filedata[SIDheader.PlayAddressL];
+    if (C64.PlayAddress) { //normal play-address called with JSR
+        if (C64.RAMbank[1] == 0x37) { //are there SIDs with routine under IO area?
+            if (0xA000 <= C64.PlayAddress && C64.PlayAddress < 0xC000) C64.RAMbank[1] = 0x36;
+        }
+        else if (C64.PlayAddress >= 0xE000) C64.RAMbank[1] = 0x35; //player under KERNAL (e.g. Crystal Kingdom Dizzy)
+    }
+    else { //IRQ-playaddress for multispeed-tunes set by init-routine (some tunes turn off KERNAL ROM but doesn't set IRQ-vector!)
+        C64.PlayAddress = (C64.RAMbank[1] & 3) < 2 ? MEM.readMem(0xFFFE) + (MEM.readMem(0xFFFF) << 8) //for PSID
+            : MEM.readMem(0x314) + (MEM.readMem(0x315) << 8);
+        if (C64.PlayAddress == 0) { //if 0, still try with RSID-mode fallback
+            C64.CPU.initCPU(C64.PlayAddress); //point CPU to play-routine
+            C64.Finished = true; C64.Returned = true; return;
+        }
+    }
+
+    if (!C64.RealSIDmode) {  //prepare (PSID) play-routine playback:
+        C64.CPU.initCPU(C64.PlayAddress); //point CPU to play-routine
+        C64.FrameCycleCnt = 0; C64.Finished = true; C64.SampleCycleCnt = 0; //C64->CIAisSet=0;
+    }
+    else { C64.Finished = false; C64.Returned = false; }
+}
+
+const generateSound = (buf: Int16Array, len: number) => {
+    for (let i = 0; i < len; i += 2) {
+        const Output = generateSample(); //cRSID_emulateC64(C64instance);
+        //if (Output>=32767) Output=32767; else if (Output<=-32768) Output=-32768; //saturation logic on overflow
+        // buf[i] = Output & 0xFF; buf[i + 1] = Output >> 8;
+        buf[i] = Output;
+    }
+}
+
+const generateSample = (): number => { //call this from custom buffer-filler
+    let Output = C64.emulateC64();
+    if (C64.PSIDdigiMode) Output += C64.playPSIDdigi();
+    if (Output >= 32767) Output = 32767; else if (Output <= -32768) Output = -32768; //saturation logic on overflow
+    return Output;
+}
+
+import fs from "fs"
+
+const loadSIDfile = (filename: string): Uint8Array => {
+    return fs.readFileSync(filename)
+}
+
+const processSIDfile = (c64: C64, filedata: Uint8Array): Uint8Array | undefined => {
+    let SIDdataOffset: number;
+    const MagicStringPSID: string = "PSID";
+    //const MagicStringRSID: string = "RSID";
+
+    C64.SIDheader = filedata;
+
+    for (let i = 0x0000; i < 0xA000; ++i) C64.RAMbank[i] = 0; //fresh start (maybe some bugged SIDs want 0 at certain RAM-locations)
+    for (let i = 0xC000; i < 0xD000; ++i) C64.RAMbank[i] = 0;
+
+    if (filedata[SIDheader.MagicString] != 'P'.charCodeAt(0) && filedata[SIDheader.MagicString] != 'R'.charCodeAt(0)) return;
+    for (let i = 0; i < MagicStringPSID.length - 1; ++i) { if (filedata[SIDheader.MagicString + i] != MagicStringPSID[i].charCodeAt(0)) return; }
+    C64.RealSIDmode = (filedata[SIDheader.MagicString] == 'R'.charCodeAt(0));
+
+    if (filedata[SIDheader.LoadAddressH] == 0 && filedata[SIDheader.LoadAddressH] == 0) { //load-address taken from first 2 bytes of the C64 PRG
+        C64.LoadAddress = (filedata[SIDheader.HeaderSize + 1] << 8) + (filedata[SIDheader.HeaderSize + 0]);
+        SIDdataOffset = filedata[SIDheader.HeaderSize + 2];
+    }
+    else { //load-adress taken from SID-header
+        C64.LoadAddress = (filedata[SIDheader.LoadAddressH] << 8) + (filedata[SIDheader.LoadAddressL]);
+        SIDdataOffset = filedata[SIDheader.HeaderSize];
+    }
+
+    for (let i = SIDdataOffset; i < filedata.length; ++i) C64.RAMbank[C64.LoadAddress + (i - SIDdataOffset)] = filedata[i];
+
+    let i = C64.LoadAddress + (filedata.length - SIDdataOffset);
+    C64.EndAddress = (i < 0x10000) ? i : 0xFFFF;
+
+    C64.PSIDdigiMode = Boolean(!C64.RealSIDmode && (filedata[SIDheader.ModelFormatStandard] & 2));
+
+    return C64.SIDheader;
+}
