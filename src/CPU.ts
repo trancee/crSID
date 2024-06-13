@@ -74,8 +74,8 @@ export class CPU {
             MEM.writeMem(address, data[0], false);
             if (C64.RAMbank[1] & 3) {
                 if (C64.RealSIDmode) {
-                    if (address == 0xDC0D) C64.CIA[1].writeCIAIRQmask(data);
-                    else if (address == 0xDD0D) C64.CIA[2].writeCIAIRQmask(data);
+                    if (address == 0xDC0D) C64.CIA[1].writeCIAIRQmask(data[0]);
+                    else if (address == 0xDD0D) C64.CIA[2].writeCIAIRQmask(data[0]);
                     else if (address == 0xDD0C) C64.IObankRD[address] = data[0]; //mirror WR to RD (e.g. Wonderland_XIII_tune_1.sid)
                     //#ifdef PLATFORM_PC //just for info displayer
                     // else if (address==0xDC05 || address==0xDC04) C64->FrameCycles = ( (C64->IObankWR[0xDC04] + (C64->IObankWR[0xDC05]<<8)) );

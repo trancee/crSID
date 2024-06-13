@@ -10,7 +10,7 @@ import { Resonances8580, Resonances6581, CutoffMul8580_44100Hz, CutoffMul6581_44
 const DebugADSRs = false
 const DebugWF = false
 
-export enum ChipModel { Unknown = 0b00, Model6581 = 0b01, Model8580 = 0b10, ModelBoth = 0b11 };
+export enum ChipModel { Unknown = 0b00, MOS6581 = 0b01, MOS8580 = 0b10, ModelBoth = 0b11 };
 export enum Channels { CHANNEL_LEFT = 1, CHANNEL_RIGHT = 2, CHANNEL_BOTH = 3 };
 
 // ADSRstateBits
@@ -171,7 +171,7 @@ export class SID {
         const combinedWF = (WFarray: UnsignedChar, oscval: UnsignedShort): UnsignedShort => {
             const Pitch: UnsignedChar = new UnsignedChar(1);
             const Filt: UnsignedShort = new UnsignedShort(1);
-            if (this.ChipModel == ChipModel.Model6581 && WFarray != PulseTriangle) oscval[0] &= 0x7FFF;
+            if (this.ChipModel == ChipModel.MOS6581 && WFarray != PulseTriangle) oscval[0] &= 0x7FFF;
             Pitch[0] = ChannelPtr[1] ? ChannelPtr[1] : 1; //avoid division by zero
             Filt[0] = 0x7777 + (0x8888 / Pitch[0]);
             this.PrevWavData[Channel] = (WFarray[oscval[0] >> 4] * Filt[0] + this.PrevWavData[Channel] * (0xFFFF - Filt[0])) >> 16;
@@ -274,7 +274,7 @@ export class SID {
             this.RingSourceMSB[0] = MSB[0];
 
             //routing the channel signal to either the filter or the unfiltered master output depending on filter-switch SID-registers
-            Envelope[0] = this.ChipModel == ChipModel.Model8580 ? this.EnvelopeCounter[Channel] : ADSR_DAC_6581[this.EnvelopeCounter[Channel]];
+            Envelope[0] = this.ChipModel == ChipModel.MOS8580 ? this.EnvelopeCounter[Channel] : ADSR_DAC_6581[this.EnvelopeCounter[Channel]];
             if (FilterSwitchReso[0] & FilterSwitchVal[Channel]) {
                 // console.debug("WavGenOut", WavGenOut[0], WavGenOut[0] - 0x8000, "Envelope", Envelope[0]);
                 this.FilterInputSample[0] += ((/*(int)*/WavGenOut[0] - 0x8000) * Envelope[0]) >> 8;
@@ -305,7 +305,7 @@ export class SID {
         // console.log("FilterSwitchReso", FilterSwitchReso, "VolumeBand", VolumeBand, "Cutoff", Cutoff, "Resonance", Resonance)
         //Filter
 
-        if (this.ChipModel == ChipModel.Model8580) {
+        if (this.ChipModel == ChipModel.MOS8580) {
             Cutoff[0] = CutoffMul8580_44100Hz[Cutoff[0]];
             Resonance[0] = Resonances8580[Resonance[0]];
         }
@@ -367,7 +367,7 @@ export class SID {
         const FilterSwitchVal: UnsignedChar = new UnsignedChar([1, 2, 4]);
 
         const HQcombinedWF = (WFarray: UnsignedChar, oscval: UnsignedShort): UnsignedShort => {
-            if (this.ChipModel == ChipModel.Model6581 && WFarray != PulseTriangle) oscval[0] &= 0x7FFF; // FIXME: mutating variable!
+            if (this.ChipModel == ChipModel.MOS6581 && WFarray != PulseTriangle) oscval[0] &= 0x7FFF; // FIXME: mutating variable!
             // console.log("HQcombinedWF", "oscval", oscval, WFarray[oscval[0] >> 4] << 8)
             return new UnsignedShort([WFarray[oscval[0] >> 4] << 8]);
         }
@@ -445,7 +445,7 @@ export class SID {
             this.RingSourceMSB[0] = MSB[0];
 
             //routing the channel signal to either the filter or the unfiltered master output depending on filter-switch SID-registers
-            Envelope[0] = (this.ChipModel == ChipModel.Model8580 ? this.EnvelopeCounter[Channel] : ADSR_DAC_6581[this.EnvelopeCounter[Channel]]);
+            Envelope[0] = (this.ChipModel == ChipModel.MOS8580 ? this.EnvelopeCounter[Channel] : ADSR_DAC_6581[this.EnvelopeCounter[Channel]]);
             if (FilterSwitchReso[0] & FilterSwitchVal[Channel]) {
                 DebugWF && console.log(`${Channel} ${this.EnvelopeCounter[Channel]} ${ADSR_DAC_6581[this.EnvelopeCounter[Channel]]} WavGenOut ${WavGenOut} ${WavGenOut[0] - 0x8000} Envelope ${Envelope} ${((WavGenOut[0] - 0x8000) * Envelope[0]) >> 8}`)
                 SIDwavOutput.FilterInput += ((/*(int)*/WavGenOut[0] - 0x8000) * Envelope[0]) >> 8;

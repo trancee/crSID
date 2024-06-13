@@ -9,6 +9,9 @@ Number.prototype.toString = function (radix?: number | undefined): string {
     return `${this._toString.call(this, radix).toUpperCase()}`
 }
 
+// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators
+// https://stackoverflow.com/questions/1436438/how-do-you-set-clear-and-toggle-a-single-bit-in-javascript
+
 export class UnsignedChar extends Uint8Array {
     Ptr(offset: number, length?: number): UnsignedChar {
         const start = offset * this.BYTES_PER_ELEMENT

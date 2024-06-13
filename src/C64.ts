@@ -193,12 +193,12 @@ export class C64 {
         C64.Attenuation = 26; C64.SIDchipCount = 1;
         // C64.CPU.C64 = C64;
 
-        C64.SID[1] = new SID(ChipModel.Model8580, Channels.CHANNEL_BOTH, 0xD400); //default C64 setup with only 1 SID and 2 CIAs and 1 VIC
+        C64.SID[1] = new SID(ChipModel.MOS8580, Channels.CHANNEL_BOTH, 0xD400); //default C64 setup with only 1 SID and 2 CIAs and 1 VIC
 
         // if (C64.HighQualitySID) {
-        //     C64.SID[2] = new SID(ChipModel.Model8580, Channels.CHANNEL_BOTH, 0xD400);
-        //     C64.SID[3] = new SID(ChipModel.Model8580, Channels.CHANNEL_BOTH, 0xD400);
-        //     C64.SID[4] = new SID(ChipModel.Model8580, Channels.CHANNEL_BOTH, 0xD400);
+        //     C64.SID[2] = new SID(ChipModel.MOS8580, Channels.CHANNEL_BOTH, 0xD400);
+        //     C64.SID[3] = new SID(ChipModel.MOS8580, Channels.CHANNEL_BOTH, 0xD400);
+        //     C64.SID[4] = new SID(ChipModel.MOS8580, Channels.CHANNEL_BOTH, 0xD400);
         // }
 
         C64.CIA[1] = new CIA(0xDC00);
@@ -229,7 +229,7 @@ export class C64 {
 
         C64.PrevRasterLine[0] = -1; //so if $d012 is set once only don't disturb FrameCycleCnt
 
-        SIDmodel = (C64.SIDheader.ModelFormatStandard & 0x30) >= 0x20 ? ChipModel.Model8580 : ChipModel.Model6581;
+        SIDmodel = (C64.SIDheader.ModelFormatStandard & 0x30) >= 0x20 ? ChipModel.MOS8580 : ChipModel.MOS6581;
         C64.SID[1].ChipModel = C64.SelectedSIDmodel ? C64.SelectedSIDmodel : SIDmodel;
 
         if (C64.SIDheader.Version != FILEVERSION_WEBSID) {
@@ -237,12 +237,12 @@ export class C64 {
             C64.SID[1].Channel = Channels.CHANNEL_LEFT;
 
             SIDmodel = C64.SIDheader.ModelFormatStandard & 0xC0;
-            if (SIDmodel) SIDmodel = (SIDmodel >= 0x80) ? ChipModel.Model8580 : ChipModel.Model6581; else SIDmodel = C64.SID[1].ChipModel;
+            if (SIDmodel) SIDmodel = (SIDmodel >= 0x80) ? ChipModel.MOS8580 : ChipModel.MOS6581; else SIDmodel = C64.SID[1].ChipModel;
             if (C64.SelectedSIDmodel) SIDmodel = C64.SelectedSIDmodel;
             C64.SID[2] = new SID(SIDmodel, Channels.CHANNEL_RIGHT, 0xD000 + C64.SIDheader.SID2baseAddress * 16);
 
             SIDmodel = C64.SIDheader.ModelFormatStandard & 0x0300;
-            if (SIDmodel) SIDmodel = (SIDmodel >= 0x02) ? ChipModel.Model8580 : ChipModel.Model6581; else SIDmodel = C64.SID[1].ChipModel;
+            if (SIDmodel) SIDmodel = (SIDmodel >= 0x02) ? ChipModel.MOS8580 : ChipModel.MOS6581; else SIDmodel = C64.SID[1].ChipModel;
             if (C64.SelectedSIDmodel) SIDmodel = C64.SelectedSIDmodel;
             C64.SID[3] = new SID(SIDmodel, Channels.CHANNEL_BOTH, 0xD000 + C64.SIDheader.SID3baseAddress * 16);
 
@@ -257,21 +257,21 @@ export class C64 {
             SIDmodel = C64.SIDheader.SID2flags & 0x30;
             SIDchannel = (C64.SIDheader.SID2flags & 0x40) ? Channels.CHANNEL_RIGHT : Channels.CHANNEL_LEFT;
             if (C64.SIDheader.SID2flags & 0x80) SIDchannel = Channels.CHANNEL_BOTH;
-            if (SIDmodel) SIDmodel = (SIDmodel >= 0x20) ? ChipModel.Model8580 : ChipModel.Model6581; else SIDmodel = C64.SID[1].ChipModel;
+            if (SIDmodel) SIDmodel = (SIDmodel >= 0x20) ? ChipModel.MOS8580 : ChipModel.MOS6581; else SIDmodel = C64.SID[1].ChipModel;
             if (C64.SelectedSIDmodel) SIDmodel = C64.SelectedSIDmodel;
             C64.SID[2] = new SID(SIDmodel, SIDchannel, 0xD000 + C64.SIDheader.SID2baseAddress * 16);
 
             SIDmodel = C64.SIDheader.SID3flags & 0x30;
             SIDchannel = (C64.SIDheader.SID3flags & 0x40) ? Channels.CHANNEL_RIGHT : Channels.CHANNEL_LEFT;
             if (C64.SIDheader.SID3flags & 0x80) SIDchannel = Channels.CHANNEL_BOTH;
-            if (SIDmodel) SIDmodel = (SIDmodel >= 0x20) ? ChipModel.Model8580 : ChipModel.Model6581; else SIDmodel = C64.SID[1].ChipModel;
+            if (SIDmodel) SIDmodel = (SIDmodel >= 0x20) ? ChipModel.MOS8580 : ChipModel.MOS6581; else SIDmodel = C64.SID[1].ChipModel;
             if (C64.SelectedSIDmodel) SIDmodel = C64.SelectedSIDmodel;
             C64.SID[3] = new SID(SIDmodel, SIDchannel, 0xD000 + C64.SIDheader.SID3baseAddress * 16);
 
             SIDmodel = C64.SIDheader.SID4flags & 0x30;
             SIDchannel = (C64.SIDheader.SID4flags & 0x40) ? Channels.CHANNEL_RIGHT : Channels.CHANNEL_LEFT;
             if (C64.SIDheader.SID4flags & 0x80) SIDchannel = Channels.CHANNEL_BOTH;
-            if (SIDmodel) SIDmodel = (SIDmodel >= 0x20) ? ChipModel.Model8580 : ChipModel.Model6581; else SIDmodel = C64.SID[1].ChipModel;
+            if (SIDmodel) SIDmodel = (SIDmodel >= 0x20) ? ChipModel.MOS8580 : ChipModel.MOS6581; else SIDmodel = C64.SID[1].ChipModel;
             if (C64.SelectedSIDmodel) SIDmodel = C64.SelectedSIDmodel;
             C64.SID[4] = new SID(SIDmodel, SIDchannel, 0xD000 + C64.SIDheader.SID4baseAddress * 16);
 

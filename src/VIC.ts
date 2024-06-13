@@ -6,21 +6,22 @@ import { C64 } from "./C64";
 // import { ChipModel } from "./SID";
 
 // VICregisters
-const
+export const
     CONTROL = 0x11, RASTERROWL = 0x12, SPRITE_ENABLE = 0x15, INTERRUPT = 0x19, INTERRUPT_ENABLE = 0x1A;
 
 // ControlBitVal
-const
+export const
     RASTERROWMSB = 0x80, DISPLAY_ENABLE = 0x10, ROWS = 0x08, YSCROLL_MASK = 0x07;
 
 // InterruptBitVal
-const
+export const
     VIC_IRQ = 0x80, RASTERROW_MATCH_IRQ = 0x01;
 
 export class VIC {
     // ChipModel: ChipModel   //(timing differences between models?)
 
     #BaseAddress: UnsignedShort = new UnsignedShort(1) // unsigned short [0, 65535] //VIC-baseaddress location in C64-memory (IO)
+
     #BasePtrWR: UnsignedChar // unsigned char* [0, 255] //VIC-baseaddress location in host's memory for writing
     #BasePtrRD: UnsignedChar // unsigned char* [0, 255] //VIC-baseaddress location in host's memory for reading
 
