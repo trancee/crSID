@@ -166,7 +166,6 @@ describe("CIA", () => {
         expect(BasePtrRD[INTERRUPTS]).toEqual(0)
     })
 
-
     it("ONESHOT_TIMERA", () => {
         cia.writeCIAIRQmask(SET_OR_CLEAR_FLAGS | TIMERA)
 

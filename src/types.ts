@@ -1,28 +1,17 @@
-declare global {
-    interface Number {
-        _toString: Function;
-    }
-}
-
-Number.prototype._toString = Number.prototype.toString;
-Number.prototype.toString = function (radix?: number | undefined): string {
-    return `${this._toString.call(this, radix).toUpperCase()}`
-}
-
 // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators
 // https://stackoverflow.com/questions/1436438/how-do-you-set-clear-and-toggle-a-single-bit-in-javascript
 
 export class UnsignedChar extends Uint8Array {
-    Ptr(offset: number, length?: number): UnsignedChar {
+    Ptr(offset: number = 0, length?: number): UnsignedChar {
         const start = offset * this.BYTES_PER_ELEMENT
-        const end = start + (length || this.length)
+        const end = start + (length ?? this.length)
         return this.subarray(start, end) as UnsignedChar
         // console.log("UnsignedChar::Ptr", offset, length, this.length, this.BYTES_PER_ELEMENT)
         // return new UnsignedChar(this.buffer, offset * this.BYTES_PER_ELEMENT, length)
     }
 }
 export class Char extends Int8Array {
-    Ptr(offset: number, length?: number): Char {
+    Ptr(offset: number = 0, length?: number): Char {
         // const start = offset * this.BYTES_PER_ELEMENT
         // const end = start + (length || this.length)
         // return this.subarray(start, end) as Char
@@ -30,7 +19,7 @@ export class Char extends Int8Array {
     }
 }
 export class UnsignedShort extends Uint16Array {
-    Ptr(offset: number, length?: number): UnsignedShort {
+    Ptr(offset: number = 0, length?: number): UnsignedShort {
         // const start = offset * this.BYTES_PER_ELEMENT
         // const end = start + (length || this.length)
         // return this.subarray(start, end) as UnsignedShort
@@ -38,7 +27,7 @@ export class UnsignedShort extends Uint16Array {
     }
 }
 export class Short extends Int16Array {
-    Ptr(offset: number, length?: number): Short {
+    Ptr(offset: number = 0, length?: number): Short {
         // const start = offset * this.BYTES_PER_ELEMENT
         // const end = start + (length || this.length)
         // return this.subarray(start, end) as Short
@@ -46,7 +35,7 @@ export class Short extends Int16Array {
     }
 }
 export class UnsignedInt extends Uint32Array {
-    Ptr(offset: number, length?: number): UnsignedInt {
+    Ptr(offset: number = 0, length?: number): UnsignedInt {
         // const start = offset * this.BYTES_PER_ELEMENT
         // const end = start + (length || this.length)
         // return this.subarray(start, end) as UnsignedInt
@@ -54,7 +43,7 @@ export class UnsignedInt extends Uint32Array {
     }
 }
 export class Int extends Int32Array {
-    Ptr(offset: number, length?: number): Int {
+    Ptr(offset: number = 0, length?: number): Int {
         // const start = offset * this.BYTES_PER_ELEMENT
         // const end = start + (length || this.length)
         // return this.subarray(start, end) as Int
