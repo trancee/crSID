@@ -1,6 +1,7 @@
 import { Int, Short, UnsignedChar, debugArray } from "../src/types"
 
-import { C64, SIDheader, SIDheaderOffset, Output, TimerSource } from "../src/C64"
+import { C64, Output, TimerSource } from "../src/C64"
+import { ChipModel, SIDheader, SIDheaderOffset } from "../src/SID"
 import { MEM } from "../src/MEM"
 
 // @ts-ignore
@@ -25,7 +26,7 @@ const initSIDtune = (SIDheader: SIDheader, subtune: number) => { //subtune: 1..2
 
     if (subtune == 0) subtune = 1;
     else if (subtune > SIDheader.SubtuneAmount) subtune = SIDheader.SubtuneAmount;
-    C64.SubTune = subtune; C64.SecondCnt[0] = C64.PlayTime[0] = 0;
+    C64.SubTune = subtune; C64.SecondCnt = C64.PlayTime = 0;
     C64.Paused = false;
 
     C64.setC64(); C64.initC64(); //cRSID_writeMemC64(C64,0xD418,0x0F); //set C64 hardware and init (reset) it
@@ -38,7 +39,7 @@ const initSIDtune = (SIDheader: SIDheader, subtune: number) => { //subtune: 1..2
         else if (C64.InitAddress >= 0xE000 || C64.EndAddress >= 0xE000) C64.RAMbank[1] = 0x35;
     }
     C64.CPU.initCPU(C64.InitAddress); //prepare init-routine call
-    C64.CPU.A[0] = subtune - 1;
+    C64.CPU.A = subtune - 1;
     // console.log(`C64.CPU.A ${C64.CPU.A}`)
 
     if (!C64.RealSIDmode) {
@@ -51,7 +52,7 @@ const initSIDtune = (SIDheader: SIDheader, subtune: number) => { //subtune: 1..2
     if (subtune > 32) C64.TimerSource = C64.SIDheader.SubtuneTimeSources[0] & 0x80; //subtunes above 32 should use subtune32's timing
     else C64.TimerSource = C64.SIDheader.SubtuneTimeSources[(32 - subtune) >> 3] & PowersOf2[(subtune - 1) & 7];
     if (C64.TimerSource || C64.IObankWR[0xDC05] != 0x40 || C64.IObankWR[0xDC04] != 0x24) { //CIA1-timing (probably multispeed tune)
-        C64.FrameCycles[0] = ((C64.IObankWR[0xDC04] + (C64.IObankWR[0xDC05] << 8))); //<< 4) / C64->ClockRatio;
+        C64.FrameCycles = ((C64.IObankWR[0xDC04] + (C64.IObankWR[0xDC05] << 8))); //<< 4) / C64->ClockRatio;
         C64.TimerSource = TimerSource.CIA; //if init-routine changed DC04 or DC05, assume CIA-timing
     }
 
@@ -74,7 +75,7 @@ const initSIDtune = (SIDheader: SIDheader, subtune: number) => { //subtune: 1..2
 
     if (!C64.RealSIDmode) {  //prepare (PSID) play-routine playback:
         C64.CPU.initCPU(C64.PlayAddress); //point CPU to play-routine
-        C64.FrameCycleCnt[0] = 0; C64.Finished = true; C64.SampleCycleCnt[0] = 0; //C64->CIAisSet=0;
+        C64.FrameCycleCnt = 0; C64.Finished = true; C64.SampleCycleCnt = 0; //C64->CIAisSet=0;
     }
     else { C64.Finished = false; C64.Returned = false; }
 }
@@ -83,7 +84,7 @@ const generateSound = (L: Float32Array, R: Float32Array, len: number) => {
     let Output: Output = { L: new Int(1), R: new Int(1) };
     for (let i = 0; i < len; i += 4) {
         for (let j = 0; j < C64.PlaybackSpeed; ++j) Output = generateSample();
-        Output.L[0] = Output.L[0] * C64.MainVolume[0] / 256; Output.R[0] = Output.R[0] * C64.MainVolume[0] / 256;
+        Output.L[0] = Output.L[0] * C64.MainVolume / 256; Output.R[0] = Output.R[0] * C64.MainVolume / 256;
         // buf[i + 0] = Output.L[0] & 0xFF; buf[i + 1] = Output.L[0] >> 8;
         // buf[i + 2] = Output.R[0] & 0xFF; buf[i + 3] = Output.R[0] >> 8;
         L[i] = Output.L[0];
@@ -100,7 +101,6 @@ const generateSample = (): Output => { //call this from custom buffer-filler
 }
 
 import fs from "fs"
-import { ChipModel } from "../src/SID"
 
 const loadSIDfile = (filename: string): UnsignedChar /* unsigned char* [0, 255] */ => {
     return new UnsignedChar(fs.readFileSync(filename))
@@ -174,8 +174,8 @@ const processSIDfile = (filedata: UnsignedChar): SIDheader | undefined => {
 const init = (samplerate: number, buflen: number) => {
     // static cRSID_C64instance* C64 = &cRSID_C64;
 
-    C64.HighQualitySID = true; C64.Stereo = false; C64.SelectedSIDmodel = ChipModel.Unknown; C64.PlaybackSpeed = 1; //default model and mode selections
-    C64.MainVolume[0] = 255;
+    C64.HighQualitySID = true; C64.Stereo = false; C64.SelectedSIDmodel = ChipModel.UNKNOWN; C64.PlaybackSpeed = 1; //default model and mode selections
+    C64.MainVolume = 255;
 
     /*C64 =*/ C64.createC64(samplerate);
 
@@ -235,8 +235,8 @@ const playSIDtune = () => {
             for (let j = 0; j < C64.PlaybackSpeed; ++j) Output = generateSample(); // C64.emulateC64();
 
             if (Output) {
-                var short = Output.L[0]
-                var range = 1 << 16 - 1;
+                const range = 1 << 16 - 1;
+                let short = Output.L[0]
 
                 if (short >= range) {
                     short |= ~(range - 1);
@@ -292,10 +292,10 @@ const main = async () => {
         console.log(str)
     }
 
-    PrevFrameCycles[0] = C64.FrameCycles[0];
+    PrevFrameCycles[0] = C64.FrameCycles;
     let str = ""
     if (!C64.RealSIDmode) {
-        str += `Speed: ${((C64.VideoStandard <= 1 ? 19656.0 : 17095.0) / C64.FrameCycles[0]).toFixed(1)}x (player-call at every ${C64.FrameCycles} cycle) TimerSource:${C64.TimerSource ? "CIA" : "VIC"} `
+        str += `Speed: ${((C64.VideoStandard <= 1 ? 19656.0 : 17095.0) / C64.FrameCycles).toFixed(1)}x (player-call at every ${C64.FrameCycles} cycle) TimerSource:${C64.TimerSource ? "CIA" : "VIC"} `
     }
     console.log(str + `Standard:${C64.VideoStandard ? "PAL" : "NTSC"}`)
 
@@ -303,10 +303,10 @@ const main = async () => {
     for (let i = 1000; i > 0; i--) {
         await delay(100);
         // console.debug(`FrameCycles ${C64.FrameCycles} PrevFrameCycles ${PrevFrameCycles} ${Number(CIAisSet)}`)
-        if (C64.FrameCycles[0] != PrevFrameCycles[0]) {
+        if (C64.FrameCycles != PrevFrameCycles[0]) {
             if (!CIAisSet) {
                 CIAisSet = true;
-                console.log(`New FrameSpeed: ${((C64.VideoStandard <= 1 ? 19656.0 : 17095.0) / C64.FrameCycles[0]).toFixed(1)}x (${C64.FrameCycles} cycles between playercalls)`)
+                console.log(`New FrameSpeed: ${((C64.VideoStandard <= 1 ? 19656.0 : 17095.0) / C64.FrameCycles).toFixed(1)}x (${C64.FrameCycles} cycles between playercalls)`)
             }
         }
     }

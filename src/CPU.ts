@@ -1,12 +1,9 @@
 //cRSID CPU-emulation
 
-import { Int, Short, UnsignedChar, UnsignedShort } from "./types";
+import { UnsignedChar, UnsignedShort, Short, Int } from "./types";
 
 import { C64 } from "./C64";
 import { MEM } from "./MEM";
-
-const DebugReg = false
-const DebugST = false
 
 // StatusFlagBitValues
 const
@@ -16,39 +13,42 @@ const
     FlagSwitches: UnsignedChar = new UnsignedChar([0x01, 0x21, 0x04, 0x24, 0x00, 0x40, 0x08, 0x28]),
     BranchFlags: UnsignedChar = new UnsignedChar([0x80, 0x40, 0x01, 0x02]);
 
-let Cycles: number, SamePage: number;
-const IR: UnsignedChar = new UnsignedChar(1), ST: UnsignedChar = new UnsignedChar(1), X: UnsignedChar = new UnsignedChar(1), Y: UnsignedChar = new UnsignedChar(1);
-const A: Short = new Short(1), SP: Short = new Short(1), T: Short = new Short(1);
-const PC: UnsignedShort = new UnsignedShort(1), Addr: UnsignedShort = new UnsignedShort(1), PrevPC: UnsignedShort = new UnsignedShort(1);
-
 export class CPU {
-    PC: UnsignedShort = new UnsignedShort(1);
-    A: Short = new Short(1); SP: Short = new Short(1);
-    X: UnsignedChar = new UnsignedChar(1); Y: UnsignedChar = new UnsignedChar(1); ST: UnsignedChar = new UnsignedChar(1);  //STATUS-flags: N V - B D I Z C
-    PrevNMI: UnsignedChar = new UnsignedChar(1); //used for NMI leading edge detection
+    #PC: UnsignedShort = new UnsignedShort(1);
+    #A: Short = new Short(1); #SP: Short = new Short(1);
+    #X: UnsignedChar = new UnsignedChar(1); #Y: UnsignedChar = new UnsignedChar(1); #ST: UnsignedChar = new UnsignedChar(1);  //STATUS-flags: N V - B D I Z C
+    #PrevNMI: UnsignedChar = new UnsignedChar(1); //used for NMI leading edge detection
+
+    set PC(value: number) { this.#PC[0] = value }
+    set A(value: number) { this.#A[0] = value }
+    set SP(value: number) { this.#SP[0] = value }
+    set X(value: number) { this.#X[0] = value }
+    set Y(value: number) { this.#Y[0] = value }
+    set ST(value: number) { this.#ST[0] = value }
+    set PrevNMI(value: number) { this.#PrevNMI[0] = value }
 
     constructor(mempos: number) {
         this.initCPU(mempos)
     }
 
     initCPU(mempos: number): void {
-        // console[mempos === 26112 ? "debug" : "debug"]("initCPU", mempos)
-        this.PC[0] = mempos; this.A[0] = 0; this.X[0] = 0; this.Y[0] = 0; this.ST[0] = 0x04; this.SP[0] = 0xFF; this.PrevNMI[0] = 0;
+        this.PC = mempos; this.A = 0; this.X = 0; this.Y = 0; this.ST = 0x04; this.SP = 0xFF; this.PrevNMI = 0;
     }
 
     emulateCPU(): number { //the CPU emulation for SID/PRG playback (ToDo: CIA/VIC-IRQ/NMI/RESET vectors, BCD-mode)
-        // console.debug("emulateCPU")
-
         // const C64: C64 = C64; //could be a parameter but function-call is faster this way if only 1 main CPU exists
         // const CPU: CPU = C64.CPU;
 
-        const loadReg = (): void => { DebugReg && console.debug("PC", PC[0], "←", this.PC[0], "SP", SP[0], "←", this.SP[0], "ST", ST[0], "←", this.ST[0], "A", A[0], "←", this.A[0], "X", X[0], "←", this.X[0], "Y", Y[0], "←", this.Y[0]); PC[0] = this.PC[0]; SP[0] = this.SP[0]; ST[0] = this.ST[0]; A[0] = this.A[0]; X[0] = this.X[0]; Y[0] = this.Y[0]; }
-        const storeReg = (): void => { DebugReg && console.debug("PC", PC[0], "→", this.PC[0], "SP", SP[0], "→", this.SP[0], "ST", ST[0], "→", this.ST[0], "A", A[0], "→", this.A[0], "X", X[0], "→", this.X[0], "Y", Y[0], "→", this.Y[0]); this.PC[0] = PC[0]; this.SP[0] = SP[0]; this.ST[0] = ST[0]; this.A[0] = A[0]; this.X[0] = X[0]; this.Y[0] = Y[0]; }
+        let Cycles: number, SamePage: number;
+        const IR: UnsignedChar = new UnsignedChar(1), ST: UnsignedChar = new UnsignedChar(1), X: UnsignedChar = new UnsignedChar(1), Y: UnsignedChar = new UnsignedChar(1);
+        const A: Short = new Short(1), SP: Short = new Short(1), T: Short = new Short(1);
+        const PC: UnsignedShort = new UnsignedShort(1), Addr: UnsignedShort = new UnsignedShort(1), PrevPC: UnsignedShort = new UnsignedShort(1);
+
+        const loadReg = (): void => { PC[0] = this.PC; SP[0] = this.SP; ST[0] = this.ST; A[0] = this.A; X[0] = this.X; Y[0] = this.Y; }
+        const storeReg = (): void => { this.PC = PC[0]; this.SP = SP[0]; this.ST = ST[0]; this.A = A[0]; this.X = X[0]; this.Y = Y[0]; }
 
         const rd = (address: number): UnsignedChar => {
             const value: UnsignedChar = MEM.readMem(address);
-            // console.log(`rd[${address}] → ${value}`)
-            // if (address == 18435 && ST[0] == 7) { console.trace(); process.exit(0) }
             if (C64.RealSIDmode) {
                 if (C64.RAMbank[1] & 3) {
                     if (address == 0xDC0D) { C64.CIA[1].acknowledgeCIAIRQ(); }
@@ -59,8 +59,7 @@ export class CPU {
         }
 
         const wr = (address: number, data: number): void => {
-            // console[data < 0 ? "trace" : "log"](`wr[${address}] ← ${data}`)
-            MEM.writeMem(address, data, false)
+            MEM.writeMem(address, data)
             if (C64.RealSIDmode && (C64.RAMbank[1] & 3)) {
                 //if(data&1) { //only writing 1 to $d019 bit0 would acknowledge, not any value (but RMW instructions write $d019 back before mod.)
                 if (address == 0xD019) { C64.VIC.acknowledgeVICrasterIRQ(); }
@@ -70,8 +69,7 @@ export class CPU {
 
         const wr2 = (address: number, data: UnsignedChar): void => { //PSID-hack specific memory-write
             const Tmp: Int = new Int(1);
-            // console[data < 0 ? "trace" : "log"](`wr2[${address}] ← ${data}`)
-            MEM.writeMem(address, data[0], false);
+            MEM.writeMem(address, data[0]);
             if (C64.RAMbank[1] & 3) {
                 if (C64.RealSIDmode) {
                     if (address == 0xDC0D) C64.CIA[1].writeCIAIRQmask(data[0]);
@@ -89,20 +87,20 @@ export class CPU {
                     switch (address) {
                         case 0xDC05: case 0xDC04:
                             if (C64.TimerSource) { //dynamic CIA-setting (Galway/Rubicon workaround)
-                                C64.FrameCycles[0] = ((C64.IObankWR[0xDC04] + (C64.IObankWR[0xDC05] << 8))); //<< 4) / C64->SampleClockRatio;
+                                C64.FrameCycles = ((C64.IObankWR[0xDC04] + (C64.IObankWR[0xDC05] << 8))); //<< 4) / C64->SampleClockRatio;
                             }
                             break;
                         case 0xDC08: C64.IObankRD[0xDC08] = data[0]; break; //refresh TOD-clock
                         case 0xDC09: C64.IObankRD[0xDC09] = data[0]; break; //refresh TOD-clock
                         case 0xD012: //dynamic VIC IRQ-rasterline setting (Microprose Soccer V1 workaround)
-                            if (C64.PrevRasterLine[0] >= 0) { //was $d012 set before? (or set only once?)
-                                if (C64.IObankWR[0xD012] != C64.PrevRasterLine[0]) {
-                                    Tmp[0] = C64.IObankWR[0xD012] - C64.PrevRasterLine[0];
+                            if (C64.PrevRasterLine >= 0) { //was $d012 set before? (or set only once?)
+                                if (C64.IObankWR[0xD012] != C64.PrevRasterLine) {
+                                    Tmp[0] = C64.IObankWR[0xD012] - C64.PrevRasterLine;
                                     if (Tmp[0] < 0) Tmp[0] += C64.VIC.RasterLines;
-                                    C64.FrameCycleCnt[0] = (C64.FrameCycles[0] - Tmp[0] * C64.VIC.RasterRowCycles);
+                                    C64.FrameCycleCnt = (C64.FrameCycles - Tmp[0] * C64.VIC.RasterRowCycles);
                                 }
                             }
-                            C64.PrevRasterLine[0] = C64.IObankWR[0xD012];
+                            C64.PrevRasterLine = C64.IObankWR[0xD012];
                             break;
                     }
                 }
@@ -132,18 +130,18 @@ export class CPU {
             ++PC[0]; Addr[0] = (rd(rd(PC[0])[0] + X[0])[0] & 0xFF) + ((rd(rd(PC[0])[0] + X[0] + 1)[0] & 0xFF) << 8); Cycles = 6;
         }
 
-        const clrC = () => { ST[0] &= ~C; DebugST && console.debug("clrC", "ST", ST[0], "C", C); } //clear Carry-flag
-        const setC = (expr: number | boolean) => { ST[0] &= ~C; ST[0] |= Number(expr != 0); DebugST && console.debug("setC", "ST", ST[0], "C", C, "expr", expr); } //set Carry-flag if expression is not zero
-        const clrNZC = () => { ST[0] &= ~(N | Z | C); DebugST && console.debug("clrNZC", "ST", ST[0], "N", N, "Z", Z, "C", C); } //clear flags
-        const clrNVZC = () => { ST[0] &= ~(N | V | Z | C); DebugST && console.debug("clrNVZC", "ST", ST[0], "N", N, "V", V, "Z", Z, "C", C); } //clear flags
-        const setNZbyA = () => { ST[0] &= ~(N | Z); ST[0] |= (Number(!A[0]) << 1) | (A[0] & N); DebugST && console.debug("setNZbyA", "ST", ST[0], "N", N, "Z", Z, "A", A[0]); } //set Negative-flag and Zero-flag based on result in Accumulator
-        const setNZbyT = () => { T[0] &= 0xFF; ST[0] &= ~(N | Z); ST[0] |= (Number(!T[0]) << 1) | (T[0] & N); DebugST && console.debug("setNZbyT", "ST", ST[0], "N", N, "Z", Z, "T", T[0]); }
-        const setNZbyX = () => { ST[0] &= ~(N | Z); ST[0] |= (Number(!X[0]) << 1) | (X[0] & N); DebugST && console.debug("setNZbyX", "ST", ST[0], "N", N, "Z", Z, "X", X[0]); } //set Negative-flag and Zero-flag based on result in X-register
-        const setNZbyY = () => { ST[0] &= ~(N | Z); ST[0] |= (Number(!Y[0]) << 1) | (Y[0] & N); DebugST && console.debug("setNZbyY", "ST", ST[0], "N", N, "Z", Z, "Y", Y[0]); } //set Negative-flag and Zero-flag based on result in Y-register
-        const setNZbyM = () => { DebugST && console.debug(">> setNZbyM", "ST", ST[0]); ST[0] &= ~(N | Z); ST[0] |= (Number(!rd(Addr[0])[0]) << 1) | (rd(Addr[0])[0] & N); DebugST && console.debug("<< setNZbyM", "ST", ST[0], "N", N, "Z", Z, "M", rd(Addr[0])[0]); } //set Negative-flag and Zero-flag based on result at Memory-Address
-        const setNZCbyAdd = () => { DebugST && console.debug(">> setNZCbyAdd", "ST", ST[0]); ST[0] &= ~(N | Z | C); ST[0] |= (A[0] & N) | Number(A[0] > 255); A[0] &= 0xFF; ST[0] |= Number(!A[0]) << 1; DebugST && console.debug("<< setNZCbyAdd", "ST", ST[0], "N", N, "Z", Z, "C", C, "A", A[0]); } //after increase/addition
-        const setVbyAdd = (M: number) => { ST[0] &= ~V; ST[0] |= ((~(T[0] ^ M)) & (T[0] ^ A[0]) & N) >> 1; DebugST && console.debug("setVbyAdd", "ST", ST[0], "V", V, "N", N, "T", T[0], "A", A[0], "M", M); } //calculate V-flag from A and T (previous A) and input2 (Memory)
-        const setNZCbySub = (val: Short): Short => { ST[0] &= ~(N | Z | C); ST[0] |= (val[0] & N) | Number(val[0] >= 0); val[0] &= 0xFF; ST[0] |= (Number(!(val[0])) << 1); DebugST && console.debug("setNZCbySub", "ST", ST[0], "N", N, "Z", Z, "C", C, "val", val[0]); return val; }
+        const clrC = () => { ST[0] &= ~C; } //clear Carry-flag
+        const setC = (expr: number | boolean) => { ST[0] &= ~C; ST[0] |= Number(expr != 0); } //set Carry-flag if expression is not zero
+        const clrNZC = () => { ST[0] &= ~(N | Z | C); } //clear flags
+        const clrNVZC = () => { ST[0] &= ~(N | V | Z | C); } //clear flags
+        const setNZbyA = () => { ST[0] &= ~(N | Z); ST[0] |= (Number(!A[0]) << 1) | (A[0] & N); } //set Negative-flag and Zero-flag based on result in Accumulator
+        const setNZbyT = () => { T[0] &= 0xFF; ST[0] &= ~(N | Z); ST[0] |= (Number(!T[0]) << 1) | (T[0] & N); }
+        const setNZbyX = () => { ST[0] &= ~(N | Z); ST[0] |= (Number(!X[0]) << 1) | (X[0] & N); } //set Negative-flag and Zero-flag based on result in X-register
+        const setNZbyY = () => { ST[0] &= ~(N | Z); ST[0] |= (Number(!Y[0]) << 1) | (Y[0] & N); } //set Negative-flag and Zero-flag based on result in Y-register
+        const setNZbyM = () => { ST[0] &= ~(N | Z); ST[0] |= (Number(!rd(Addr[0])[0]) << 1) | (rd(Addr[0])[0] & N); } //set Negative-flag and Zero-flag based on result at Memory-Address
+        const setNZCbyAdd = () => { ST[0] &= ~(N | Z | C); ST[0] |= (A[0] & N) | Number(A[0] > 255); A[0] &= 0xFF; ST[0] |= Number(!A[0]) << 1; } //after increase/addition
+        const setVbyAdd = (M: number) => { ST[0] &= ~V; ST[0] |= ((~(T[0] ^ M)) & (T[0] ^ A[0]) & N) >> 1; } //calculate V-flag from A and T (previous A) and input2 (Memory)
+        const setNZCbySub = (val: Short): Short => { ST[0] &= ~(N | Z | C); ST[0] |= (val[0] & N) | Number(val[0] >= 0); val[0] &= 0xFF; ST[0] |= (Number(!(val[0])) << 1); return val; }
 
         const push = (value: number): void => { C64.RAMbank[0x100 + SP[0]] = value; --SP[0]; SP[0] &= 0xFF; } //push a value to stack
         const pop = (): number => { ++SP[0]; SP[0] &= 0xFF; return C64.RAMbank[0x100 + SP[0]]; } //pop a value from stack
@@ -414,22 +412,21 @@ export class CPU {
 
     //handle entering into IRQ and NMI interrupt
     handleCPUinterrupts(): boolean {
-        // console.debug("handleCPUinterrupts")
-        const push = (value: number): void => { C64.RAMbank[0x100 + this.SP[0]] = value; --this.SP[0]; this.SP[0] &= 0xFF; } //push a value to stack
+        const push = (value: number): void => { C64.RAMbank[0x100 + this.SP] = value; --this.SP; this.SP &= 0xFF; } //push a value to stack
 
-        if (C64.NMI[0] > this.PrevNMI[0]) { //if IRQ and NMI at the same time, NMI is serviced first
-            push(this.PC[0] >> 8); push((this.PC[0] & 0xFF)); push(this.ST[0]); this.ST[0] |= I;
-            this.PC[0] = MEM.readMem(0xFFFA)[0] + (MEM.readMem(0xFFFB)[0] << 8); //NMI-vector
-            this.PrevNMI[0] = C64.NMI[0];
+        if (C64.NMI > this.PrevNMI) { //if IRQ and NMI at the same time, NMI is serviced first
+            push(this.PC >> 8); push((this.PC & 0xFF)); push(this.ST); this.ST |= I;
+            this.PC = MEM.readMem(0xFFFA)[0] + (MEM.readMem(0xFFFB)[0] << 8); //NMI-vector
+            this.PrevNMI = C64.NMI;
             return true;
         }
-        else if (C64.IRQ && !(this.ST[0] & I)) {
-            push(this.PC[0] >> 8); push((this.PC[0] & 0xFF)); push(this.ST[0]); this.ST[0] |= I;
-            this.PC[0] = MEM.readMem(0xFFFE)[0] + (MEM.readMem(0xFFFF)[0] << 8); //maskable IRQ-vector
-            this.PrevNMI[0] = C64.NMI[0];
+        else if (C64.IRQ && !(this.ST & I)) {
+            push(this.PC >> 8); push((this.PC & 0xFF)); push(this.ST); this.ST |= I;
+            this.PC = MEM.readMem(0xFFFE)[0] + (MEM.readMem(0xFFFF)[0] << 8); //maskable IRQ-vector
+            this.PrevNMI = C64.NMI;
             return true;
         }
-        this.PrevNMI[0] = C64.NMI[0]; //prepare for NMI edge-detection
+        this.PrevNMI = C64.NMI; //prepare for NMI edge-detection
 
         return false;
     }

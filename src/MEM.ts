@@ -4,9 +4,9 @@ import { UnsignedChar } from "./types";
 
 import { C64 } from "./C64";
 
-const ROM_IRQreturnCode: UnsignedChar = new UnsignedChar([0xAD, 0x0D, 0xDC, 0x68, 0xA8, 0x68, 0xAA, 0x68, 0x40]); // unsigned char [0, 255] //CIA1-acknowledge IRQ-return
-const ROM_NMIstartCode: UnsignedChar = new UnsignedChar([0x78, 0x6c, 0x18, 0x03, 0x40]); // unsigned char [0, 255] //SEI and jmp($0318)
-const ROM_IRQBRKstartCode: UnsignedChar = new UnsignedChar([ // unsigned char [0, 255] //Full IRQ-return (handling BRK with the same RAM vector as IRQ)
+const ROM_IRQreturnCode: UnsignedChar = new UnsignedChar([0xAD, 0x0D, 0xDC, 0x68, 0xA8, 0x68, 0xAA, 0x68, 0x40]); //CIA1-acknowledge IRQ-return
+const ROM_NMIstartCode: UnsignedChar = new UnsignedChar([0x78, 0x6c, 0x18, 0x03, 0x40]); //SEI and jmp($0318)
+const ROM_IRQBRKstartCode: UnsignedChar = new UnsignedChar([ //Full IRQ-return (handling BRK with the same RAM vector as IRQ)
     0x48, 0x8A, 0x48, 0x98, 0x48, 0xBA, 0xBD, 0x04, 0x01, 0x29, 0x10, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0x6C, 0x14, 0x03
 ]);
 
@@ -23,22 +23,17 @@ export class MEM {
     }
 
     static readMem(address: number): UnsignedChar {
-        // const value = MEM.getMemReadPtr(address)
-        // console.debug("readMem", address, value)
         return MEM.getMemReadPtr(address);
-        // return value
     }
 
-    static writeMem(address: number, value: number, log: boolean = true): void {
-        // log && console.debug(`writeMem[${address}] = ${value}`)
-
+    static writeMem(address: number, value: number): void {
         if (address < 0xD000 || 0xE000 <= address) C64.RAMbank[address] = value;
         else if (C64.RAMbank[1] & 3) { //handle SID-mirrors! (CJ in the USA workaround (writing above $d420, except SID2/SID3/PSIDdigi))
             if (0xD420 <= address && address < 0xD800) { //CIA/VIC mirrors needed?
                 if (!(C64.PSIDdigiMode && 0xD418 <= address && address < 0xD500)
-                    && !(C64.SID[2].BaseAddress[0] <= address && address < C64.SID[2].BaseAddress[0] + 0x20)
-                    && !(C64.SID[3].BaseAddress[0] <= address && address < C64.SID[3].BaseAddress[0] + 0x20)
-                    && !(C64.SID[4].BaseAddress[0] <= address && address < C64.SID[4].BaseAddress[0] + 0x20)) {
+                    && !(C64.SID[2].BaseAddress <= address && address < C64.SID[2].BaseAddress + 0x20)
+                    && !(C64.SID[3].BaseAddress <= address && address < C64.SID[3].BaseAddress + 0x20)
+                    && !(C64.SID[4].BaseAddress <= address && address < C64.SID[4].BaseAddress + 0x20)) {
                     C64.IObankWR[0xD400 + (address & 0x1F)] = value; //write to $D400..D41F if not in SID2/SID3 address-space
                 }
                 else C64.IObankWR[address] = value;

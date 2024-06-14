@@ -1,9 +1,8 @@
 //cRSID CIA emulation
 
-import { UnsignedChar, UnsignedShort, debugArray } from "./types";
+import { UnsignedChar, UnsignedShort } from "./types";
 
 import { C64 } from "./C64";
-// import { ChipModel } from "./SID";
 
 // CIAregisters
 export const
@@ -29,16 +28,12 @@ export const
     TIMERB_FROM_TIMERA_AND_CNT = 0x60, TIMEOFDAY_WRITE_SETS_ALARM = 0x80
 
 export class CIA {
-    // ChipModel: ChipModel; //old or new CIA? (have 1 cycle difference in cases)
+    #BaseAddress: UnsignedShort = new UnsignedShort(1); //CIA-baseaddress location in C64-memory (IO)
 
-    #BaseAddress: UnsignedShort = new UnsignedShort(1); // unsigned short [0, 65535] //CIA-baseaddress location in C64-memory (IO)
-
-    #BasePtrWR: UnsignedChar; // unsigned char* [0, 255] //CIA-baseaddress location in host's memory for writing
-    #BasePtrRD: UnsignedChar; // unsigned char* [0, 255] //CIA-baseaddress location in host's memory for reading
+    #BasePtrWR: UnsignedChar; //CIA-baseaddress location in host's memory for writing
+    #BasePtrRD: UnsignedChar; //CIA-baseaddress location in host's memory for reading
 
     constructor(baseaddress: number) {
-        // this.ChipModel = ChipModel.Unknown;
-
         this.#BaseAddress[0] = baseaddress;
 
         this.#BasePtrWR = C64.IObankWR.Ptr(baseaddress)
@@ -48,15 +43,10 @@ export class CIA {
     }
 
     initCIAchip() {
-        // console.debug("initCIAchip")
-        // console.debug(debugArray("BasePtrWR", this.BasePtrWR, 0x10))
-        // console.debug(debugArray("BasePtrRD", this.BasePtrRD, 0x10))
         for (let i = 0; i < 0x10; ++i) this.#BasePtrWR[i] = this.#BasePtrRD[i] = 0x00;
     }
 
     emulateCIA(cycles: number): number {
-        // console.debug("emulateCIA", cycles)
-
         //TimerA
         if (this.#BasePtrWR[CONTROLA] & FORCELOADA_STROBE) { //force latch into counter (strobe-input)
             this.#BasePtrRD[TIMERAH] = this.#BasePtrWR[TIMERAH]; this.#BasePtrRD[TIMERAL] = this.#BasePtrWR[TIMERAL];
@@ -99,13 +89,11 @@ export class CIA {
     }
 
     writeCIAIRQmask(value: number): void {
-        // console.debug("writeCIAIRQmask", value)
         if (value & SET_OR_CLEAR_FLAGS) this.#BasePtrWR[INTERRUPTS] |= (value & (FLAGn | SERIALPORT | ALARM | TIMERB | TIMERA));
         else this.#BasePtrWR[INTERRUPTS] &= ~(value & (FLAGn | SERIALPORT | ALARM | TIMERB | TIMERA));
     }
 
     acknowledgeCIAIRQ(): void {
-        // console.debug("acknowledgeCIAIRQ")
         this.#BasePtrRD[INTERRUPTS] = 0x00; //reading a CIA interrupt-register clears its read-part and IRQ-flag
     }
 }
