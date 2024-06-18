@@ -4,11 +4,16 @@ import { UnsignedChar } from "./types";
 
 import { C64 } from "./C64";
 
-const ROM_IRQreturnCode: UnsignedChar = new UnsignedChar([0xAD, 0x0D, 0xDC, 0x68, 0xA8, 0x68, 0xAA, 0x68, 0x40]); //CIA1-acknowledge IRQ-return
-const ROM_NMIstartCode: UnsignedChar = new UnsignedChar([0x78, 0x6c, 0x18, 0x03, 0x40]); //SEI and jmp($0318)
-const ROM_IRQBRKstartCode: UnsignedChar = new UnsignedChar([ //Full IRQ-return (handling BRK with the same RAM vector as IRQ)
-    0x48, 0x8A, 0x48, 0x98, 0x48, 0xBA, 0xBD, 0x04, 0x01, 0x29, 0x10, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0x6C, 0x14, 0x03
-]);
+export const
+    ROM_IRQreturnCode: UnsignedChar = new UnsignedChar([0xAD, 0x0D, 0xDC, 0x68, 0xA8, 0x68, 0xAA, 0x68, 0x40]); //CIA1-acknowledge IRQ-return
+
+export const
+    ROM_NMIstartCode: UnsignedChar = new UnsignedChar([0x78, 0x6C, 0x18, 0x03, 0x40]); //SEI and jmp($0318)
+
+export const
+    ROM_IRQBRKstartCode: UnsignedChar = new UnsignedChar([ //Full IRQ-return (handling BRK with the same RAM vector as IRQ)
+        0x48, 0x8A, 0x48, 0x98, 0x48, 0xBA, 0xBD, 0x04, 0x01, 0x29, 0x10, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0x6C, 0x14, 0x03
+    ]);
 
 export class MEM {
     private static getMemReadPtr(address: number): UnsignedChar {
@@ -27,8 +32,9 @@ export class MEM {
     }
 
     static writeMem(address: number, value: number): void {
-        if (address < 0xD000 || 0xE000 <= address) C64.RAMbank[address] = value;
-        else if (C64.RAMbank[1] & 3) { //handle SID-mirrors! (CJ in the USA workaround (writing above $d420, except SID2/SID3/PSIDdigi))
+        // if (address < 0xD000 || 0xE000 <= address) C64.RAMbank[address] = value;
+        // else if (C64.RAMbank[1] & 3) { //handle SID-mirrors! (CJ in the USA workaround (writing above $d420, except SID2/SID3/PSIDdigi))
+        if (address >= 0xD000 && address < 0xE000 && C64.RAMbank[1] & 3) { //handle SID-mirrors! (CJ in the USA workaround (writing above $d420, except SID2/SID3/PSIDdigi))
             if (0xD420 <= address && address < 0xD800) { //CIA/VIC mirrors needed?
                 if (!(C64.PSIDdigiMode && 0xD418 <= address && address < 0xD500)
                     && !(C64.SID[2].BaseAddress <= address && address < C64.SID[2].BaseAddress + 0x20)
@@ -46,9 +52,9 @@ export class MEM {
     static setROMcontent(): void { //fill KERNAL/BASIC-ROM areas with content needed for SID-playback
         for (let i = 0xA000; i < 0x10000; ++i) C64.ROMbanks[i] = 0x60; //RTS (at least return if some unsupported call is made to ROM)
         for (let i = 0xEA31; i < 0xEA7E; ++i) C64.ROMbanks[i] = 0xEA; //NOP (full IRQ-return leading to simple IRQ-return without other tasks)
-        for (let i = 0; i < 9; ++i) C64.ROMbanks[0xEA7E + i] = ROM_IRQreturnCode[i];
-        for (let i = 0; i < 4; ++i) C64.ROMbanks[0xFE43 + i] = ROM_NMIstartCode[i];
-        for (let i = 0; i < 19; ++i) C64.ROMbanks[0xFF48 + i] = ROM_IRQBRKstartCode[i];
+        for (let i = 0; i < ROM_IRQreturnCode.length; ++i) C64.ROMbanks[0xEA7E + i] = ROM_IRQreturnCode[i];
+        for (let i = 0; i < ROM_NMIstartCode.length; ++i) C64.ROMbanks[0xFE43 + i] = ROM_NMIstartCode[i];
+        for (let i = 0; i < ROM_IRQBRKstartCode.length; ++i) C64.ROMbanks[0xFF48 + i] = ROM_IRQBRKstartCode[i];
 
         C64.ROMbanks[0xFFFB] = 0xFE; C64.ROMbanks[0xFFFA] = 0x43; //ROM NMI-vector
         C64.ROMbanks[0xFFFF] = 0xFF; C64.ROMbanks[0xFFFE] = 0x48; //ROM IRQ-vector
@@ -69,7 +75,7 @@ export class MEM {
         MEM.writeMem(0x0319, 0xEA/*0xFE*/); MEM.writeMem(0x0318, 0x81/*0x47*/); //NMI
         //}
 
-        for (let i = 0xD000; i < 0xD7FF; ++i) C64.IObankRD[i] = C64.IObankWR[i] = 0x00; //initialize the whole IO area for a known base-state
+        for (let i = 0xD000; i < 0xD800; ++i) C64.IObankRD[i] = C64.IObankWR[i] = 0x00; //initialize the whole IO area for a known base-state
         if (C64.RealSIDmode) { C64.IObankWR[0xD012] = 0x37; C64.IObankWR[0xD011] = 0x8B; } //else C64->IObankWR[0xD012] = 0;
         //C64->IObankWR[0xD019] = 0; //PSID: rasterrow: any value <= $FF, IRQ:enable later if there is VIC-timingsource
 
