@@ -10,8 +10,14 @@ const
     N = 0x80, V = 0x40, B = 0x10, D = 0x08, I = 0x04, Z = 0x02, C = 0x01;
 
 const
-    FlagSwitches: UnsignedChar = new UnsignedChar([0x01, 0x21, 0x04, 0x24, 0x00, 0x40, 0x08, 0x28]),
-    BranchFlags: UnsignedChar = new UnsignedChar([0x80, 0x40, 0x01, 0x02]);
+    FlagSwitches: UnsignedChar = new UnsignedChar([0x01, 0x21, 0x04, 0x24, 0x00, 0x40, 0x08, 0x28])
+const
+    BranchFlags: UnsignedChar = new UnsignedChar([0x80, 0x40, 0x01, 0x02])
+
+let Cycles: number, SamePage: number;
+const IR: UnsignedChar = new UnsignedChar(1), ST: UnsignedChar = new UnsignedChar(1), X: UnsignedChar = new UnsignedChar(1), Y: UnsignedChar = new UnsignedChar(1);
+const A: Short = new Short(1), SP: Short = new Short(1), T: Short = new Short(1);
+const PC: UnsignedShort = new UnsignedShort(1), Addr: UnsignedShort = new UnsignedShort(1), PrevPC: UnsignedShort = new UnsignedShort(1);
 
 export class CPU {
     #PC: UnsignedShort = new UnsignedShort(1);
@@ -20,12 +26,19 @@ export class CPU {
     #PrevNMI: UnsignedChar = new UnsignedChar(1); //used for NMI leading edge detection
 
     set PC(value: number) { this.#PC[0] = value }
+    get PC(): number { return this.#PC[0] }
     set A(value: number) { this.#A[0] = value }
+    get A(): number { return this.#A[0] }
     set SP(value: number) { this.#SP[0] = value }
+    get SP(): number { return this.#SP[0] }
     set X(value: number) { this.#X[0] = value }
+    get X(): number { return this.#X[0] }
     set Y(value: number) { this.#Y[0] = value }
+    get Y(): number { return this.#Y[0] }
     set ST(value: number) { this.#ST[0] = value }
+    get ST(): number { return this.#ST[0] }
     set PrevNMI(value: number) { this.#PrevNMI[0] = value }
+    get PrevNMI(): number { return this.#PrevNMI[0] }
 
     constructor(mempos: number) {
         this.initCPU(mempos)
@@ -35,84 +48,100 @@ export class CPU {
         this.PC = mempos; this.A = 0; this.X = 0; this.Y = 0; this.ST = 0x04; this.SP = 0xFF; this.PrevNMI = 0;
     }
 
+    loadReg(): void { PC[0] = this.PC; SP[0] = this.SP; ST[0] = this.ST; A[0] = this.A; X[0] = this.X; Y[0] = this.Y; }
+    storeReg(): void { this.PC = PC[0]; this.SP = SP[0]; this.ST = ST[0]; this.A = A[0]; this.X = X[0]; this.Y = Y[0]; }
+
+    static rd(address: number): UnsignedChar {
+        const value: UnsignedChar = MEM.readMem(address);
+        if (C64.RealSIDmode) {
+            if (C64.RAMbank[1] & 3) {
+                if (address == 0xDC0D) { C64.CIA[1].acknowledgeCIAIRQ(); }
+                else if (address == 0xDD0D) { C64.CIA[2].acknowledgeCIAIRQ(); }
+            }
+        }
+        return value;
+    }
+
+    static wr(address: number, data: number): void {
+        MEM.writeMem(address, data)
+        if (C64.RealSIDmode && (C64.RAMbank[1] & 3)) {
+            //if(data&1) { //only writing 1 to $d019 bit0 would acknowledge, not any value (but RMW instructions write $d019 back before mod.)
+            if (address == 0xD019) { C64.VIC.acknowledgeVICrasterIRQ(); }
+            //}
+        }
+    }
+
+    static wr2(address: number, data: UnsignedChar): void { //PSID-hack specific memory-write
+        const Tmp: Int = new Int(1);
+        MEM.writeMem(address, data[0]);
+        if (C64.RAMbank[1] & 3) {
+            if (C64.RealSIDmode) {
+                if (address == 0xDC0D) C64.CIA[1].writeCIAIRQmask(data[0]);
+                else if (address == 0xDD0D) C64.CIA[2].writeCIAIRQmask(data[0]);
+                else if (address == 0xDD0C) C64.IObankRD[address] = data[0]; //mirror WR to RD (e.g. Wonderland_XIII_tune_1.sid)
+                //#ifdef PLATFORM_PC //just for info displayer
+                // else if (address==0xDC05 || address==0xDC04) C64->FrameCycles = ( (C64->IObankWR[0xDC04] + (C64->IObankWR[0xDC05]<<8)) );
+                //#endif
+                else if (address == 0xD019 && data[0] & 1) { //only writing 1 to $d019 bit0 would acknowledge
+                    C64.VIC.acknowledgeVICrasterIRQ();
+                }
+            }
+
+            else {
+                switch (address) {
+                    case 0xDC05: case 0xDC04:
+                        if (C64.TimerSource) { //dynamic CIA-setting (Galway/Rubicon workaround)
+                            C64.FrameCycles = ((C64.IObankWR[0xDC04] + (C64.IObankWR[0xDC05] << 8))); //<< 4) / C64->SampleClockRatio;
+                        }
+                        break;
+                    case 0xDC08: C64.IObankRD[0xDC08] = data[0]; break; //refresh TOD-clock
+                    case 0xDC09: C64.IObankRD[0xDC09] = data[0]; break; //refresh TOD-clock
+                    case 0xD012: //dynamic VIC IRQ-rasterline setting (Microprose Soccer V1 workaround)
+                        if (C64.PrevRasterLine >= 0) { //was $d012 set before? (or set only once?)
+                            if (C64.IObankWR[0xD012] != C64.PrevRasterLine) {
+                                Tmp[0] = C64.IObankWR[0xD012] - C64.PrevRasterLine;
+                                if (Tmp[0] < 0) Tmp[0] += C64.VIC.RasterLines;
+                                C64.FrameCycleCnt = (C64.FrameCycles - Tmp[0] * C64.VIC.RasterRowCycles);
+                            }
+                        }
+                        C64.PrevRasterLine = C64.IObankWR[0xD012];
+                        break;
+                }
+            }
+
+        }
+    }
+
+    static addrModeImmediate(): void { ++PC[0]; Addr[0] = PC[0]; Cycles = 2; } //imm.
+    static addrModeZeropage(): void { ++PC[0]; Addr[0] = CPU.rd(PC[0])[0]; Cycles = 3; } //zp
+    static addrModeAbsolute(): void { ++PC[0]; Addr[0] = CPU.rd(PC[0])[0]; ++PC[0]; Addr[0] += CPU.rd(PC[0])[0] << 8; Cycles = 4; } //abs
+    static addrModeZeropageXindexed(): void { ++PC[0]; Addr[0] = (CPU.rd(PC[0])[0] + X[0]) & 0xFF; Cycles = 4; } //zp,x (with zeropage-wraparound of 6502)
+    static addrModeZeropageYindexed(): void { ++PC[0]; Addr[0] = (CPU.rd(PC[0])[0] + Y[0]) & 0xFF; Cycles = 4; } //zp,y (with zeropage-wraparound of 6502)
+
+    static push(value: number): void { C64.RAMbank[0x100 + SP[0]] = value; --SP[0]; SP[0] &= 0xFF; } //push a value to stack
+    static pop(): number { ++SP[0]; SP[0] &= 0xFF; return C64.RAMbank[0x100 + SP[0]]; } //pop a value from stack
+
     emulateCPU(): number { //the CPU emulation for SID/PRG playback (ToDo: CIA/VIC-IRQ/NMI/RESET vectors, BCD-mode)
         // const C64: C64 = C64; //could be a parameter but function-call is faster this way if only 1 main CPU exists
         // const CPU: CPU = C64.CPU;
 
-        let Cycles: number, SamePage: number;
-        const IR: UnsignedChar = new UnsignedChar(1), ST: UnsignedChar = new UnsignedChar(1), X: UnsignedChar = new UnsignedChar(1), Y: UnsignedChar = new UnsignedChar(1);
-        const A: Short = new Short(1), SP: Short = new Short(1), T: Short = new Short(1);
-        const PC: UnsignedShort = new UnsignedShort(1), Addr: UnsignedShort = new UnsignedShort(1), PrevPC: UnsignedShort = new UnsignedShort(1);
+        // let Cycles: number, SamePage: number;
+        // const IR: UnsignedChar = new UnsignedChar(1), ST: UnsignedChar = new UnsignedChar(1), X: UnsignedChar = new UnsignedChar(1), Y: UnsignedChar = new UnsignedChar(1);
+        // const A: Short = new Short(1), SP: Short = new Short(1), T: Short = new Short(1);
+        // const PC: UnsignedShort = new UnsignedShort(1), Addr: UnsignedShort = new UnsignedShort(1), PrevPC: UnsignedShort = new UnsignedShort(1);
 
-        const loadReg = (): void => { PC[0] = this.PC; SP[0] = this.SP; ST[0] = this.ST; A[0] = this.A; X[0] = this.X; Y[0] = this.Y; }
-        const storeReg = (): void => { this.PC = PC[0]; this.SP = SP[0]; this.ST = ST[0]; this.A = A[0]; this.X = X[0]; this.Y = Y[0]; }
+        const loadReg = this.loadReg.bind(this)
+        const storeReg = this.storeReg.bind(this)
 
-        const rd = (address: number): UnsignedChar => {
-            const value: UnsignedChar = MEM.readMem(address);
-            if (C64.RealSIDmode) {
-                if (C64.RAMbank[1] & 3) {
-                    if (address == 0xDC0D) { C64.CIA[1].acknowledgeCIAIRQ(); }
-                    else if (address == 0xDD0D) { C64.CIA[2].acknowledgeCIAIRQ(); }
-                }
-            }
-            return value;
-        }
+        const rd = CPU.rd
+        const wr = CPU.wr
+        const wr2 = CPU.wr2
 
-        const wr = (address: number, data: number): void => {
-            MEM.writeMem(address, data)
-            if (C64.RealSIDmode && (C64.RAMbank[1] & 3)) {
-                //if(data&1) { //only writing 1 to $d019 bit0 would acknowledge, not any value (but RMW instructions write $d019 back before mod.)
-                if (address == 0xD019) { C64.VIC.acknowledgeVICrasterIRQ(); }
-                //}
-            }
-        }
-
-        const wr2 = (address: number, data: UnsignedChar): void => { //PSID-hack specific memory-write
-            const Tmp: Int = new Int(1);
-            MEM.writeMem(address, data[0]);
-            if (C64.RAMbank[1] & 3) {
-                if (C64.RealSIDmode) {
-                    if (address == 0xDC0D) C64.CIA[1].writeCIAIRQmask(data[0]);
-                    else if (address == 0xDD0D) C64.CIA[2].writeCIAIRQmask(data[0]);
-                    else if (address == 0xDD0C) C64.IObankRD[address] = data[0]; //mirror WR to RD (e.g. Wonderland_XIII_tune_1.sid)
-                    //#ifdef PLATFORM_PC //just for info displayer
-                    // else if (address==0xDC05 || address==0xDC04) C64->FrameCycles = ( (C64->IObankWR[0xDC04] + (C64->IObankWR[0xDC05]<<8)) );
-                    //#endif
-                    else if (address == 0xD019 && data[0] & 1) { //only writing 1 to $d019 bit0 would acknowledge
-                        C64.VIC.acknowledgeVICrasterIRQ();
-                    }
-                }
-
-                else {
-                    switch (address) {
-                        case 0xDC05: case 0xDC04:
-                            if (C64.TimerSource) { //dynamic CIA-setting (Galway/Rubicon workaround)
-                                C64.FrameCycles = ((C64.IObankWR[0xDC04] + (C64.IObankWR[0xDC05] << 8))); //<< 4) / C64->SampleClockRatio;
-                            }
-                            break;
-                        case 0xDC08: C64.IObankRD[0xDC08] = data[0]; break; //refresh TOD-clock
-                        case 0xDC09: C64.IObankRD[0xDC09] = data[0]; break; //refresh TOD-clock
-                        case 0xD012: //dynamic VIC IRQ-rasterline setting (Microprose Soccer V1 workaround)
-                            if (C64.PrevRasterLine >= 0) { //was $d012 set before? (or set only once?)
-                                if (C64.IObankWR[0xD012] != C64.PrevRasterLine) {
-                                    Tmp[0] = C64.IObankWR[0xD012] - C64.PrevRasterLine;
-                                    if (Tmp[0] < 0) Tmp[0] += C64.VIC.RasterLines;
-                                    C64.FrameCycleCnt = (C64.FrameCycles - Tmp[0] * C64.VIC.RasterRowCycles);
-                                }
-                            }
-                            C64.PrevRasterLine = C64.IObankWR[0xD012];
-                            break;
-                    }
-                }
-
-            }
-        }
-
-        const addrModeImmediate = (): void => { ++PC[0]; Addr[0] = PC[0]; Cycles = 2; } //imm.
-        const addrModeZeropage = (): void => { ++PC[0]; Addr[0] = rd(PC[0])[0]; Cycles = 3; } //zp
-        const addrModeAbsolute = (): void => { ++PC[0]; Addr[0] = rd(PC[0])[0]; ++PC[0]; Addr[0] += rd(PC[0])[0] << 8; Cycles = 4; } //abs
-        const addrModeZeropageXindexed = (): void => { ++PC[0]; Addr[0] = (rd(PC[0])[0] + X[0]) & 0xFF; Cycles = 4; } //zp,x (with zeropage-wraparound of 6502)
-        const addrModeZeropageYindexed = (): void => { ++PC[0]; Addr[0] = (rd(PC[0])[0] + Y[0]) & 0xFF; Cycles = 4; } //zp,y (with zeropage-wraparound of 6502)
+        const addrModeImmediate = CPU.addrModeImmediate // (): void => { ++PC[0]; Addr[0] = PC[0]; Cycles = 2; } //imm.
+        const addrModeZeropage = CPU.addrModeZeropage // (): void => { ++PC[0]; Addr[0] = rd(PC[0])[0]; Cycles = 3; } //zp
+        const addrModeAbsolute = CPU.addrModeAbsolute // (): void => { ++PC[0]; Addr[0] = rd(PC[0])[0]; ++PC[0]; Addr[0] += rd(PC[0])[0] << 8; Cycles = 4; } //abs
+        const addrModeZeropageXindexed = CPU.addrModeZeropageXindexed // (): void => { ++PC[0]; Addr[0] = (rd(PC[0])[0] + X[0]) & 0xFF; Cycles = 4; } //zp,x (with zeropage-wraparound of 6502)
+        const addrModeZeropageYindexed = CPU.addrModeZeropageYindexed // (): void => { ++PC[0]; Addr[0] = (rd(PC[0])[0] + Y[0]) & 0xFF; Cycles = 4; } //zp,y (with zeropage-wraparound of 6502)
 
         const addrModeXindexed = (): void => { // abs,x (only STA is 5 cycles, others are 4 if page not crossed, RMW:7)
             ++PC[0]; Addr[0] = rd(PC[0])[0] + X[0]; ++PC[0]; SamePage = Number(Addr[0] <= 0xFF); Addr[0] += rd(PC[0])[0] << 8; Cycles = 5;
@@ -143,8 +172,8 @@ export class CPU {
         const setVbyAdd = (M: number) => { ST[0] &= ~V; ST[0] |= ((~(T[0] ^ M)) & (T[0] ^ A[0]) & N) >> 1; } //calculate V-flag from A and T (previous A) and input2 (Memory)
         const setNZCbySub = (val: Short): Short => { ST[0] &= ~(N | Z | C); ST[0] |= (val[0] & N) | Number(val[0] >= 0); val[0] &= 0xFF; ST[0] |= (Number(!(val[0])) << 1); return val; }
 
-        const push = (value: number): void => { C64.RAMbank[0x100 + SP[0]] = value; --SP[0]; SP[0] &= 0xFF; } //push a value to stack
-        const pop = (): number => { ++SP[0]; SP[0] &= 0xFF; return C64.RAMbank[0x100 + SP[0]]; } //pop a value from stack
+        const push = CPU.push
+        const pop = CPU.pop
 
         loadReg(); PrevPC[0] = PC[0];
         IR[0] = rd(PC[0])[0]; Cycles = 2; SamePage = 0; //'Cycles': ensure smallest 6510 runtime (for implied/register instructions)
@@ -407,7 +436,7 @@ export class CPU {
             if ((C64.RAMbank[1] & 3) > 1 && PrevPC[0] < 0xE000 && (PC[0] == 0xEA31 || PC[0] == 0xEA81 || PC[0] == 0xEA7E)) return 0xFE;
         }
 
-        return Cycles & 0xFF;
+        return Cycles;
     }
 
     //handle entering into IRQ and NMI interrupt
