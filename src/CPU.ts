@@ -27,16 +27,19 @@ export class CPU {
 
     set PC(value: number) { this.#PC[0] = value }
     get PC(): number { return this.#PC[0] }
+
     set A(value: number) { this.#A[0] = value }
     get A(): number { return this.#A[0] }
     set SP(value: number) { this.#SP[0] = value }
     get SP(): number { return this.#SP[0] }
+
     set X(value: number) { this.#X[0] = value }
     get X(): number { return this.#X[0] }
     set Y(value: number) { this.#Y[0] = value }
     get Y(): number { return this.#Y[0] }
     set ST(value: number) { this.#ST[0] = value }
     get ST(): number { return this.#ST[0] }
+
     set PrevNMI(value: number) { this.#PrevNMI[0] = value }
     get PrevNMI(): number { return this.#PrevNMI[0] }
 
@@ -118,6 +121,35 @@ export class CPU {
     static addrModeZeropageXindexed(): void { ++PC[0]; Addr[0] = (CPU.rd(PC[0])[0] + X[0]) & 0xFF; Cycles = 4; } //zp,x (with zeropage-wraparound of 6502)
     static addrModeZeropageYindexed(): void { ++PC[0]; Addr[0] = (CPU.rd(PC[0])[0] + Y[0]) & 0xFF; Cycles = 4; } //zp,y (with zeropage-wraparound of 6502)
 
+    static addrModeXindexed(): void { // abs,x (only STA is 5 cycles, others are 4 if page not crossed, RMW:7)
+        ++PC[0]; Addr[0] = CPU.rd(PC[0])[0] + X[0]; ++PC[0]; SamePage = Number(Addr[0] <= 0xFF); Addr[0] += CPU.rd(PC[0])[0] << 8; Cycles = 5;
+    }
+
+    static addrModeYindexed(): void { // abs,y (only STA is 5 cycles, others are 4 if page not crossed, RMW:7)
+        ++PC[0]; Addr[0] = CPU.rd(PC[0])[0] + Y[0]; ++PC[0]; SamePage = Number(Addr[0] <= 0xFF); Addr[0] += CPU.rd(PC[0])[0] << 8; Cycles = 5;
+    }
+
+    static addrModeIndirectYindexed(): void { // (zp),y (only STA is 6 cycles, others are 5 if page not crossed, RMW:8)
+        ++PC[0]; Addr[0] = CPU.rd(CPU.rd(PC[0])[0])[0] + Y[0]; SamePage = Number(Addr[0] <= 0xFF); Addr[0] += CPU.rd((CPU.rd(PC[0])[0] + 1) & 0xFF)[0] << 8; Cycles = 6;
+    }
+
+    static addrModeXindexedIndirect(): void { // (zp,x)
+        ++PC[0]; Addr[0] = (CPU.rd(CPU.rd(PC[0])[0] + X[0])[0] & 0xFF) + ((CPU.rd(CPU.rd(PC[0])[0] + X[0] + 1)[0] & 0xFF) << 8); Cycles = 6;
+    }
+
+    static clrC() { ST[0] &= ~C; } //clear Carry-flag
+    static setC(expr: number | boolean) { ST[0] &= ~C; ST[0] |= Number(expr != 0); } //set Carry-flag if expression is not zero
+    static clrNZC() { ST[0] &= ~(N | Z | C); } //clear flags
+    static clrNVZC() { ST[0] &= ~(N | V | Z | C); } //clear flags
+    static setNZbyA() { ST[0] &= ~(N | Z); ST[0] |= (Number(!A[0]) << 1) | (A[0] & N); } //set Negative-flag and Zero-flag based on result in Accumulator
+    static setNZbyT() { T[0] &= 0xFF; ST[0] &= ~(N | Z); ST[0] |= (Number(!T[0]) << 1) | (T[0] & N); }
+    static setNZbyX() { ST[0] &= ~(N | Z); ST[0] |= (Number(!X[0]) << 1) | (X[0] & N); } //set Negative-flag and Zero-flag based on result in X-register
+    static setNZbyY() { ST[0] &= ~(N | Z); ST[0] |= (Number(!Y[0]) << 1) | (Y[0] & N); } //set Negative-flag and Zero-flag based on result in Y-register
+    static setNZbyM() { ST[0] &= ~(N | Z); ST[0] |= (Number(!CPU.rd(Addr[0])[0]) << 1) | (CPU.rd(Addr[0])[0] & N); } //set Negative-flag and Zero-flag based on result at Memory-Address
+    static setNZCbyAdd() { ST[0] &= ~(N | Z | C); ST[0] |= (A[0] & N) | Number(A[0] > 0xFF); A[0] &= 0xFF; ST[0] |= Number(!A[0]) << 1; } //after increase/addition
+    static setVbyAdd(M: number) { ST[0] &= ~V; ST[0] |= ((~(T[0] ^ M)) & (T[0] ^ A[0]) & N) >> 1; } //calculate V-flag from A and T (previous A) and input2 (Memory)
+    static setNZCbySub(val: Short): Short { ST[0] &= ~(N | Z | C); ST[0] |= (val[0] & N) | Number(val[0] >= 0); val[0] &= 0xFF; ST[0] |= (Number(!(val[0])) << 1); return val; }
+
     static push(value: number): void { C64.RAMbank[0x100 + SP[0]] = value; --SP[0]; SP[0] &= 0xFF; } //push a value to stack
     static pop(): number { ++SP[0]; SP[0] &= 0xFF; return C64.RAMbank[0x100 + SP[0]]; } //pop a value from stack
 
@@ -137,41 +169,6 @@ export class CPU {
         const wr = CPU.wr
         const wr2 = CPU.wr2
 
-        const addrModeImmediate = CPU.addrModeImmediate // (): void => { ++PC[0]; Addr[0] = PC[0]; Cycles = 2; } //imm.
-        const addrModeZeropage = CPU.addrModeZeropage // (): void => { ++PC[0]; Addr[0] = rd(PC[0])[0]; Cycles = 3; } //zp
-        const addrModeAbsolute = CPU.addrModeAbsolute // (): void => { ++PC[0]; Addr[0] = rd(PC[0])[0]; ++PC[0]; Addr[0] += rd(PC[0])[0] << 8; Cycles = 4; } //abs
-        const addrModeZeropageXindexed = CPU.addrModeZeropageXindexed // (): void => { ++PC[0]; Addr[0] = (rd(PC[0])[0] + X[0]) & 0xFF; Cycles = 4; } //zp,x (with zeropage-wraparound of 6502)
-        const addrModeZeropageYindexed = CPU.addrModeZeropageYindexed // (): void => { ++PC[0]; Addr[0] = (rd(PC[0])[0] + Y[0]) & 0xFF; Cycles = 4; } //zp,y (with zeropage-wraparound of 6502)
-
-        const addrModeXindexed = (): void => { // abs,x (only STA is 5 cycles, others are 4 if page not crossed, RMW:7)
-            ++PC[0]; Addr[0] = rd(PC[0])[0] + X[0]; ++PC[0]; SamePage = Number(Addr[0] <= 0xFF); Addr[0] += rd(PC[0])[0] << 8; Cycles = 5;
-        }
-
-        const addrModeYindexed = (): void => { // abs,y (only STA is 5 cycles, others are 4 if page not crossed, RMW:7)
-            ++PC[0]; Addr[0] = rd(PC[0])[0] + Y[0]; ++PC[0]; SamePage = Number(Addr[0] <= 0xFF); Addr[0] += rd(PC[0])[0] << 8; Cycles = 5;
-        }
-
-        const addrModeIndirectYindexed = (): void => { // (zp),y (only STA is 6 cycles, others are 5 if page not crossed, RMW:8)
-            ++PC[0]; Addr[0] = rd(rd(PC[0])[0])[0] + Y[0]; SamePage = Number(Addr[0] <= 0xFF); Addr[0] += rd((rd(PC[0])[0] + 1) & 0xFF)[0] << 8; Cycles = 6;
-        }
-
-        const addrModeXindexedIndirect = (): void => { // (zp,x)
-            ++PC[0]; Addr[0] = (rd(rd(PC[0])[0] + X[0])[0] & 0xFF) + ((rd(rd(PC[0])[0] + X[0] + 1)[0] & 0xFF) << 8); Cycles = 6;
-        }
-
-        const clrC = () => { ST[0] &= ~C; } //clear Carry-flag
-        const setC = (expr: number | boolean) => { ST[0] &= ~C; ST[0] |= Number(expr != 0); } //set Carry-flag if expression is not zero
-        const clrNZC = () => { ST[0] &= ~(N | Z | C); } //clear flags
-        const clrNVZC = () => { ST[0] &= ~(N | V | Z | C); } //clear flags
-        const setNZbyA = () => { ST[0] &= ~(N | Z); ST[0] |= (Number(!A[0]) << 1) | (A[0] & N); } //set Negative-flag and Zero-flag based on result in Accumulator
-        const setNZbyT = () => { T[0] &= 0xFF; ST[0] &= ~(N | Z); ST[0] |= (Number(!T[0]) << 1) | (T[0] & N); }
-        const setNZbyX = () => { ST[0] &= ~(N | Z); ST[0] |= (Number(!X[0]) << 1) | (X[0] & N); } //set Negative-flag and Zero-flag based on result in X-register
-        const setNZbyY = () => { ST[0] &= ~(N | Z); ST[0] |= (Number(!Y[0]) << 1) | (Y[0] & N); } //set Negative-flag and Zero-flag based on result in Y-register
-        const setNZbyM = () => { ST[0] &= ~(N | Z); ST[0] |= (Number(!rd(Addr[0])[0]) << 1) | (rd(Addr[0])[0] & N); } //set Negative-flag and Zero-flag based on result at Memory-Address
-        const setNZCbyAdd = () => { ST[0] &= ~(N | Z | C); ST[0] |= (A[0] & N) | Number(A[0] > 255); A[0] &= 0xFF; ST[0] |= Number(!A[0]) << 1; } //after increase/addition
-        const setVbyAdd = (M: number) => { ST[0] &= ~V; ST[0] |= ((~(T[0] ^ M)) & (T[0] ^ A[0]) & N) >> 1; } //calculate V-flag from A and T (previous A) and input2 (Memory)
-        const setNZCbySub = (val: Short): Short => { ST[0] &= ~(N | Z | C); ST[0] |= (val[0] & N) | Number(val[0] >= 0); val[0] &= 0xFF; ST[0] |= (Number(!(val[0])) << 1); return val; }
-
         const push = CPU.push
         const pop = CPU.pop
 
@@ -181,19 +178,19 @@ export class CPU {
         if (IR[0] & 1) {  //nybble2:  1/5/9/D:accu.instructions, 3/7/B/F:illegal opcodes
 
             switch ((IR[0] & 0x1F) >> 1) { //value-forming to cause jump-table //PC wraparound not handled inside to save codespace
-                case 0x00: case 0x01: addrModeXindexedIndirect(); break; //(zp,x)
-                case 0x02: case 0x03: addrModeZeropage(); break;
-                case 0x04: case 0x05: addrModeImmediate(); break;
-                case 0x06: case 0x07: addrModeAbsolute(); break;
-                case 0x08: case 0x09: addrModeIndirectYindexed(); break; //(zp),y (5..6 cycles, 8 for R-M-W)
-                case 0x0A: addrModeZeropageXindexed(); break; //zp,x
-                case 0x0B: if ((IR[0] & 0xC0) != 0x80) addrModeZeropageXindexed(); //zp,x for illegal opcodes
-                else addrModeZeropageYindexed(); //zp,y for LAX/SAX illegal opcodes
+                case 0x00: case 0x01: CPU.addrModeXindexedIndirect(); break; //(zp,x)
+                case 0x02: case 0x03: CPU.addrModeZeropage(); break;
+                case 0x04: case 0x05: CPU.addrModeImmediate(); break;
+                case 0x06: case 0x07: CPU.addrModeAbsolute(); break;
+                case 0x08: case 0x09: CPU.addrModeIndirectYindexed(); break; //(zp),y (5..6 cycles, 8 for R-M-W)
+                case 0x0A: CPU.addrModeZeropageXindexed(); break; //zp,x
+                case 0x0B: if ((IR[0] & 0xC0) != 0x80) CPU.addrModeZeropageXindexed(); //zp,x for illegal opcodes
+                else CPU.addrModeZeropageYindexed(); //zp,y for LAX/SAX illegal opcodes
                     break;
-                case 0x0C: case 0x0D: addrModeYindexed(); break;
-                case 0x0E: addrModeXindexed(); break;
-                case 0x0F: if ((IR[0] & 0xC0) != 0x80) addrModeXindexed(); //abs,x for illegal opcodes
-                else addrModeYindexed(); //abs,y for LAX/SAX illegal opcodes
+                case 0x0C: case 0x0D: CPU.addrModeYindexed(); break;
+                case 0x0E: CPU.addrModeXindexed(); break;
+                case 0x0F: if ((IR[0] & 0xC0) != 0x80) CPU.addrModeXindexed(); //abs,x for illegal opcodes
+                else CPU.addrModeYindexed(); //abs,y for LAX/SAX illegal opcodes
                     break;
             }
             Addr[0] &= 0xFFFF;
@@ -201,55 +198,55 @@ export class CPU {
             switch ((IR[0] & 0xE0) >> 5) { //value-forming to cause gapless case-values and faster jump-table creation from switch-case
 
                 case 0: if ((IR[0] & 0x1F) != 0x0B) { //ORA / SLO(ASO)=ASL+ORA
-                    if ((IR[0] & 3) == 3) { clrNZC(); setC(rd(Addr[0])[0] >= N); wr(Addr[0], rd(Addr[0])[0] << 1); Cycles += 2; } //for SLO
+                    if ((IR[0] & 3) == 3) { CPU.clrNZC(); CPU.setC(rd(Addr[0])[0] >= N); wr(Addr[0], rd(Addr[0])[0] << 1); Cycles += 2; } //for SLO
                     else Cycles -= SamePage;
-                    A[0] |= rd(Addr[0])[0]; setNZbyA(); //ORA
+                    A[0] |= rd(Addr[0])[0]; CPU.setNZbyA(); //ORA
                 }
-                else { A[0] &= rd(Addr[0])[0]; setNZbyA(); setC(A[0] >= N); } //ANC (AND+Carry=bit7)
+                else { A[0] &= rd(Addr[0])[0]; CPU.setNZbyA(); CPU.setC(A[0] >= N); } //ANC (AND+Carry=bit7)
                     break;
 
                 case 1: if ((IR[0] & 0x1F) != 0x0B) { //AND / RLA (ROL+AND)
                     if ((IR[0] & 3) == 3) { //for RLA
-                        T[0] = (rd(Addr[0])[0] << 1) + (ST[0] & C); clrNZC(); setC(T[0] > 255); T[0] &= 0xFF; wr(Addr[0], T[0]); Cycles += 2;
+                        T[0] = (rd(Addr[0])[0] << 1) + (ST[0] & C); CPU.clrNZC(); CPU.setC(T[0] > 0xFF); T[0] &= 0xFF; wr(Addr[0], T[0]); Cycles += 2;
                     }
                     else Cycles -= SamePage;
-                    A[0] &= rd(Addr[0])[0]; setNZbyA(); //AND
+                    A[0] &= rd(Addr[0])[0]; CPU.setNZbyA(); //AND
                 }
-                else { A[0] &= rd(Addr[0])[0]; setNZbyA(); setC(A[0] >= N); } //ANC (AND+Carry=bit7)
+                else { A[0] &= rd(Addr[0])[0]; CPU.setNZbyA(); CPU.setC(A[0] >= N); } //ANC (AND+Carry=bit7)
                     break;
 
                 case 2: if ((IR[0] & 0x1F) != 0x0B) { //EOR / SRE(LSE)=LSR+EOR
-                    if ((IR[0] & 3) == 3) { clrNZC(); setC(rd(Addr[0])[0] & 1); wr(Addr[0], rd(Addr[0])[0] >> 1); Cycles += 2; } //for SRE
+                    if ((IR[0] & 3) == 3) { CPU.clrNZC(); CPU.setC(rd(Addr[0])[0] & 1); wr(Addr[0], rd(Addr[0])[0] >> 1); Cycles += 2; } //for SRE
                     else Cycles -= SamePage;
-                    A[0] ^= rd(Addr[0])[0]; setNZbyA(); //EOR
+                    A[0] ^= rd(Addr[0])[0]; CPU.setNZbyA(); //EOR
                 }
-                else { A[0] &= rd(Addr[0])[0]; setC(A[0] & 1); A[0] >>= 1; A[0] &= 0xFF; setNZbyA(); } //ALR(ASR)=(AND+LSR)
+                else { A[0] &= rd(Addr[0])[0]; CPU.setC(A[0] & 1); A[0] >>= 1; A[0] &= 0xFF; CPU.setNZbyA(); } //ALR(ASR)=(AND+LSR)
                     break;
 
                 case 3: if ((IR[0] & 0x1F) != 0x0B) { //RRA (ROR+ADC) / ADC
                     if ((IR[0] & 3) == 3) { //for RRA
-                        T[0] = (rd(Addr[0])[0] >> 1) + ((ST[0] & C) << 7); clrNZC(); setC(T[0] & 1); wr(Addr[0], T[0]); Cycles += 2;
+                        T[0] = (rd(Addr[0])[0] >> 1) + ((ST[0] & C) << 7); CPU.clrNZC(); CPU.setC(T[0] & 1); wr(Addr[0], T[0]); Cycles += 2;
                     }
                     else Cycles -= SamePage;
                     T[0] = A[0]; A[0] += rd(Addr[0])[0] + (ST[0] & C);
                     if ((ST[0] & D) && (A[0] & 0x0F) > 9) { A[0] += 0x10; A[0] &= 0xF0; } //BCD?
-                    setNZCbyAdd(); setVbyAdd(rd(Addr[0])[0]); //ADC
+                    CPU.setNZCbyAdd(); CPU.setVbyAdd(rd(Addr[0])[0]); //ADC
                 }
                 else { // ARR (AND+ROR, bit0 not going to C, but C and bit7 get exchanged.)
                     A[0] &= rd(Addr[0])[0]; T[0] += rd(Addr[0])[0] + (ST[0] & C);
-                    clrNVZC(); setC(T[0] > 255); setVbyAdd(rd(Addr[0])[0]); //V-flag set by intermediate ADC mechanism: (A&mem)+mem
-                    T[0] = A[0]; A[0] = (A[0] >> 1) + ((ST[0] & C) << 7); setC(T[0] >= N); setNZbyA();
+                    CPU.clrNVZC(); CPU.setC(T[0] > 0xFF); CPU.setVbyAdd(rd(Addr[0])[0]); //V-flag set by intermediate ADC mechanism: (A&mem)+mem
+                    T[0] = A[0]; A[0] = (A[0] >> 1) + ((ST[0] & C) << 7); CPU.setC(T[0] >= N); CPU.setNZbyA();
                 }
                     break;
 
-                case 4: if ((IR[0] & 0x1F) == 0x0B) { A[0] = X[0] & rd(Addr[0])[0]; setNZbyA(); } //XAA (TXA+AND), highly unstable on real 6502!
+                case 4: if ((IR[0] & 0x1F) == 0x0B) { A[0] = X[0] & rd(Addr[0])[0]; CPU.setNZbyA(); } //XAA (TXA+AND), highly unstable on real 6502!
                 else if ((IR[0] & 0x1F) == 0x1B) { SP[0] = A[0] & X[0]; wr(Addr[0], (SP[0] & ((Addr[0] >> 8) + 1))); } //TAS(SHS) (SP=A&X, mem=S&H} - unstable on real 6502
                 else { wr2(Addr[0], new UnsignedChar([A[0] & (((IR[0] & 3) == 3) ? X[0] : 0xFF)])); } //STA / SAX (at times same as AHX/SHX/SHY) (illegal)
                     break;
 
                 case 5: if ((IR[0] & 0x1F) != 0x1B) { A[0] = rd(Addr[0])[0]; if ((IR[0] & 3) == 3) X[0] = A[0]; } //LDA / LAX (illegal, used by my 1 rasterline player) (LAX #imm is unstable on C64)
                 else { A[0] = X[0] = SP[0] = (rd(Addr[0])[0] & SP[0]); } //LAS(LAR)
-                    setNZbyA(); Cycles -= SamePage;
+                    CPU.setNZbyA(); Cycles -= SamePage;
                     break;
 
                 case 6: if ((IR[0] & 0x1F) != 0x0B) { // CMP / DCP(DEC+CMP)
@@ -258,13 +255,13 @@ export class CPU {
                     T[0] = A[0] - rd(Addr[0])[0];
                 }
                 else { X[0] = T[0] = (A[0] & X[0]) - rd(Addr[0])[0]; } //SBX(AXS)  //SBX (AXS) (CMP+DEX at the same time)
-                    T[0] = setNZCbySub(T)[0];
+                    T[0] = CPU.setNZCbySub(T)[0];
                     break;
 
                 case 7: if ((IR[0] & 3) == 3 && (IR[0] & 0x1F) != 0x0B) { wr(Addr[0], rd(Addr[0])[0] + 1); Cycles += 2; } //ISC(ISB)=INC+SBC / SBC
                 else Cycles -= SamePage;
                     T[0] = A[0]; A[0] -= rd(Addr[0])[0] + Number(!(ST[0] & C));
-                    A[0] = setNZCbySub(A)[0]; setVbyAdd(~rd(Addr[0])[0]);
+                    A[0] = CPU.setNZCbySub(A)[0]; CPU.setVbyAdd(~rd(Addr[0])[0]);
                     break;
             }
         }
@@ -272,53 +269,53 @@ export class CPU {
         else if (IR[0] & 2) {  //nybble2:  2:illegal/LDX, 6:A/X/INC/DEC, A:Accu-shift/reg.transfer/NOP, E:shift/X/INC/DEC
 
             switch (IR[0] & 0x1F) { //Addressing modes
-                case 0x02: addrModeImmediate(); break;
-                case 0x06: addrModeZeropage(); break;
-                case 0x0E: addrModeAbsolute(); break;
-                case 0x16: if ((IR[0] & 0xC0) != 0x80) addrModeZeropageXindexed(); //zp,x
-                else addrModeZeropageYindexed(); //zp,y
+                case 0x02: CPU.addrModeImmediate(); break;
+                case 0x06: CPU.addrModeZeropage(); break;
+                case 0x0E: CPU.addrModeAbsolute(); break;
+                case 0x16: if ((IR[0] & 0xC0) != 0x80) CPU.addrModeZeropageXindexed(); //zp,x
+                else CPU.addrModeZeropageYindexed(); //zp,y
                     break;
-                case 0x1E: if ((IR[0] & 0xC0) != 0x80) addrModeXindexed(); //abs,x
-                else addrModeYindexed(); //abs,y
+                case 0x1E: if ((IR[0] & 0xC0) != 0x80) CPU.addrModeXindexed(); //abs,x
+                else CPU.addrModeYindexed(); //abs,y
                     break;
             }
             Addr[0] &= 0xFFFF;
 
             switch ((IR[0] & 0xE0) >> 5) {
 
-                case 0: clrC(); case 1:
-                    if ((IR[0] & 0x0F) == 0x0A) { A[0] = (A[0] << 1) + (ST[0] & C); setNZCbyAdd(); } //ASL/ROL (Accu)
-                    else { T[0] = (rd(Addr[0])[0] << 1) + (ST[0] & C); setC(T[0] > 255); setNZbyT(); wr(Addr[0], T[0]); Cycles += 2; } //RMW (Read-Write-Modify)
+                case 0: CPU.clrC(); case 1:
+                    if ((IR[0] & 0x0F) == 0x0A) { A[0] = (A[0] << 1) + (ST[0] & C); CPU.setNZCbyAdd(); } //ASL/ROL (Accu)
+                    else { T[0] = (rd(Addr[0])[0] << 1) + (ST[0] & C); CPU.setC(T[0] > 0xFF); CPU.setNZbyT(); wr(Addr[0], T[0]); Cycles += 2; } //RMW (Read-Write-Modify)
                     break;
 
-                case 2: clrC(); case 3:
-                    if ((IR[0] & 0x0F) == 0x0A) { T[0] = A[0]; A[0] = (A[0] >> 1) + ((ST[0] & C) << 7); setC(T[0] & 1); A[0] &= 0xFF; setNZbyA(); } //LSR/ROR (Accu)
-                    else { T[0] = (rd(Addr[0])[0] >> 1) + ((ST[0] & C) << 7); setC(rd(Addr[0])[0] & 1); setNZbyT(); wr(Addr[0], T[0]); Cycles += 2; } //memory (RMW)
+                case 2: CPU.clrC(); case 3:
+                    if ((IR[0] & 0x0F) == 0x0A) { T[0] = A[0]; A[0] = (A[0] >> 1) + ((ST[0] & C) << 7); CPU.setC(T[0] & 1); A[0] &= 0xFF; CPU.setNZbyA(); } //LSR/ROR (Accu)
+                    else { T[0] = (rd(Addr[0])[0] >> 1) + ((ST[0] & C) << 7); CPU.setC(rd(Addr[0])[0] & 1); CPU.setNZbyT(); wr(Addr[0], T[0]); Cycles += 2; } //memory (RMW)
                     break;
 
                 case 4: if (IR[0] & 4) { wr2(Addr[0], new UnsignedChar([X[0]])); } //STX
                 else if (IR[0] & 0x10) SP[0] = X[0]; //TXS
-                else { A[0] = X[0]; setNZbyA(); } //TXA
+                else { A[0] = X[0]; CPU.setNZbyA(); } //TXA
                     break;
 
                 case 5: if ((IR[0] & 0x0F) != 0x0A) { X[0] = rd(Addr[0])[0]; Cycles -= SamePage; } //LDX
                 else if (IR[0] & 0x10) X[0] = SP[0]; //TSX
                 else X[0] = A[0]; //TAX
-                    setNZbyX();
+                    CPU.setNZbyX();
                     break;
 
-                case 6: if (IR[0] & 4) { wr(Addr[0], rd(Addr[0])[0] - 1); setNZbyM(); Cycles += 2; } //DEC
-                else { --X[0]; setNZbyX(); } //DEX
+                case 6: if (IR[0] & 4) { wr(Addr[0], rd(Addr[0])[0] - 1); CPU.setNZbyM(); Cycles += 2; } //DEC
+                else { --X[0]; CPU.setNZbyX(); } //DEX
                     break;
 
-                case 7: if (IR[0] & 4) { wr(Addr[0], rd(Addr[0])[0] + 1); setNZbyM(); Cycles += 2; } //INC/NOP
+                case 7: if (IR[0] & 4) { wr(Addr[0], rd(Addr[0])[0] + 1); CPU.setNZbyM(); Cycles += 2; } //INC/NOP
                     break;
             }
         }
 
         else if ((IR[0] & 0x0C) == 8) {  //nybble2:  8:register/statusflag
             if (IR[0] & 0x10) {
-                if (IR[0] == 0x98) { A[0] = Y[0]; setNZbyA(); } //TYA
+                if (IR[0] == 0x98) { A[0] = Y[0]; CPU.setNZbyA(); } //TYA
                 else { //CLC/SEC/CLI/SEI/CLV/CLD/SED
                     if (FlagSwitches[IR[0] >> 5] & 0x20) ST[0] |= (FlagSwitches[IR[0] >> 5] & 0xDF);
                     else ST[0] &= ~(FlagSwitches[IR[0] >> 5] & 0xDF);
@@ -329,11 +326,11 @@ export class CPU {
                     case 0: push(ST[0]); Cycles = 3; break; //PHP
                     case 1: ST[0] = pop(); Cycles = 4; break; //PLP
                     case 2: push(A[0]); Cycles = 3; break; //PHA
-                    case 3: A[0] = pop(); setNZbyA(); Cycles = 4; break; //PLA
-                    case 4: --Y[0]; setNZbyY(); break; //DEY
-                    case 5: Y[0] = A[0]; setNZbyY(); break; //TAY
-                    case 6: ++Y[0]; setNZbyY(); break; //INY
-                    case 7: ++X[0]; setNZbyX(); break; //INX
+                    case 3: A[0] = pop(); CPU.setNZbyA(); Cycles = 4; break; //PLA
+                    case 4: --Y[0]; CPU.setNZbyY(); break; //DEY
+                    case 5: Y[0] = A[0]; CPU.setNZbyY(); break; //TAY
+                    case 6: ++Y[0]; CPU.setNZbyY(); break; //INY
+                    case 7: ++X[0]; CPU.setNZbyX(); break; //INX
                 }
             }
         }
@@ -353,11 +350,11 @@ export class CPU {
 
             else {  //nybble2:  0:Y/control/Y/compare  4:Y/compare  C:Y/compare/JMP
                 switch (IR[0] & 0x1F) { //Addressing modes
-                    case 0x00: addrModeImmediate(); break; //imm. (or abs.low for JSR/BRK)
-                    case 0x04: addrModeZeropage(); break;
-                    case 0x0C: addrModeAbsolute(); break;
-                    case 0x14: addrModeZeropageXindexed(); break; //zp,x
-                    case 0x1C: addrModeXindexed(); break; //abs,x
+                    case 0x00: CPU.addrModeImmediate(); break; //imm. (or abs.low for JSR/BRK)
+                    case 0x04: CPU.addrModeZeropage(); break;
+                    case 0x0C: CPU.addrModeAbsolute(); break;
+                    case 0x14: CPU.addrModeZeropageXindexed(); break; //zp,x
+                    case 0x1C: CPU.addrModeXindexed(); break; //abs,x
                 }
                 Addr[0] &= 0xFFFF;
 
@@ -410,17 +407,17 @@ export class CPU {
                     case 4: if (IR[0] & 4) { wr2(Addr[0], new UnsignedChar([Y[0]])); } //STY / NOP #imm
                         break;
 
-                    case 5: Y[0] = rd(Addr[0])[0]; setNZbyY(); Cycles -= SamePage; //LDY
+                    case 5: Y[0] = rd(Addr[0])[0]; CPU.setNZbyY(); Cycles -= SamePage; //LDY
                         break;
 
                     case 6: if (!(IR[0] & 0x10)) { //CPY / NOP abs,x/zp,x
-                        T[0] = Y[0] - rd(Addr[0])[0]; T[0] = setNZCbySub(T)[0]; //CPY
+                        T[0] = Y[0] - rd(Addr[0])[0]; T[0] = CPU.setNZCbySub(T)[0]; //CPY
                     }
                     else if (IR[0] == 0xDC) Cycles -= SamePage; //NOP abs,x
                         break;
 
                     case 7: if (!(IR[0] & 0x10)) { //CPX / NOP abs,x/zp,x
-                        T[0] = X[0] - rd(Addr[0])[0]; T[0] = setNZCbySub(T)[0]; //CPX
+                        T[0] = X[0] - rd(Addr[0])[0]; T[0] = CPU.setNZCbySub(T)[0]; //CPX
                     }
                     else if (IR[0] == 0xFC) Cycles -= SamePage; //NOP abs,x
                         break;

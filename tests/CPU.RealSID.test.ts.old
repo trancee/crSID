@@ -6,10 +6,10 @@ import { UnsignedChar } from "../src/types"
 
 import fs from "fs"
 
-const filename = "Wizball.sid"
-const subtune = 4
+const filename = "RoboCop.sid"
+const subtune = 1
 
-describe("CPU", () => {
+describe("CPU RealSID", () => {
     const filedata = new UnsignedChar(fs.readFileSync(`tests/files/${filename}`))
 
     const HeaderSize = (filedata[SIDheaderOffset.HeaderSizeH00] << 8) + filedata[SIDheaderOffset.HeaderSize]
@@ -34,10 +34,6 @@ describe("CPU", () => {
         expect(cpu.ST).toEqual(0x04)
         expect(cpu.SP).toEqual(0xFF)
         expect(cpu.PrevNMI).toEqual(0)
-    })
-
-    it("addrModeImmediate", () => {
-        CPU.addrModeImmediate()
     })
 
     it("storeReg & loadReg", () => {
