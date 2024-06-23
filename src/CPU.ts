@@ -6,18 +6,25 @@ import { C64 } from "./C64";
 import { MEM } from "./MEM";
 
 // StatusFlagBitValues
-const
-    N = 0x80, V = 0x40, B = 0x10, D = 0x08, I = 0x04, Z = 0x02, C = 0x01;
+export const
+    N = 0x80, V = 0x40, U = 0x20, B = 0x10, D = 0x08, I = 0x04, Z = 0x02, C = 0x01, NO_FLAGS = 0x00
 
 const
     FlagSwitches: UnsignedChar = new UnsignedChar([0x01, 0x21, 0x04, 0x24, 0x00, 0x40, 0x08, 0x28])
 const
     BranchFlags: UnsignedChar = new UnsignedChar([0x80, 0x40, 0x01, 0x02])
 
-let Cycles: number, SamePage: number;
-const IR: UnsignedChar = new UnsignedChar(1), ST: UnsignedChar = new UnsignedChar(1), X: UnsignedChar = new UnsignedChar(1), Y: UnsignedChar = new UnsignedChar(1);
-const A: Short = new Short(1), SP: Short = new Short(1), T: Short = new Short(1);
-const PC: UnsignedShort = new UnsignedShort(1), Addr: UnsignedShort = new UnsignedShort(1), PrevPC: UnsignedShort = new UnsignedShort(1);
+// Vectors
+export const
+    STACK = 0x0100,
+    NMI = 0xFFFA,
+    RESET = 0xFFFC,
+    IRQ = 0xFFFE
+
+export let Cycles: number = 0, SamePage: number = 0;
+export const IR: UnsignedChar = new UnsignedChar(1), ST: UnsignedChar = new UnsignedChar(1), X: UnsignedChar = new UnsignedChar(1), Y: UnsignedChar = new UnsignedChar(1);
+export const A: Short = new Short(1), SP: Short = new Short(1), T: Short = new Short(1);
+export const PC: UnsignedShort = new UnsignedShort(1), Addr: UnsignedShort = new UnsignedShort(1), PrevPC: UnsignedShort = new UnsignedShort(1);
 
 export class CPU {
     #PC: UnsignedShort = new UnsignedShort(1);
@@ -25,31 +32,43 @@ export class CPU {
     #X: UnsignedChar = new UnsignedChar(1); #Y: UnsignedChar = new UnsignedChar(1); #ST: UnsignedChar = new UnsignedChar(1);  //STATUS-flags: N V - B D I Z C
     #PrevNMI: UnsignedChar = new UnsignedChar(1); //used for NMI leading edge detection
 
+    // Program Counter
     set PC(value: number) { this.#PC[0] = value }
     get PC(): number { return this.#PC[0] }
 
+    // Accumulator
     set A(value: number) { this.#A[0] = value }
     get A(): number { return this.#A[0] }
+    // Stack Pointer
     set SP(value: number) { this.#SP[0] = value }
     get SP(): number { return this.#SP[0] }
+    set S(value: number) { this.#SP[0] = value }
+    get S(): number { return this.#SP[0] }
 
+    // X Index Register
     set X(value: number) { this.#X[0] = value }
     get X(): number { return this.#X[0] }
+    // Y Index Register
     set Y(value: number) { this.#Y[0] = value }
     get Y(): number { return this.#Y[0] }
+    // Processor Status
     set ST(value: number) { this.#ST[0] = value }
     get ST(): number { return this.#ST[0] }
+    set P(value: number) { this.#ST[0] = value }
+    get P(): number { return this.#ST[0] }
 
     set PrevNMI(value: number) { this.#PrevNMI[0] = value }
     get PrevNMI(): number { return this.#PrevNMI[0] }
 
-    constructor(mempos: number) {
+    constructor(mempos: number = 0x0000) {
         this.initCPU(mempos)
     }
 
     initCPU(mempos: number): void {
         this.PC = mempos; this.A = 0; this.X = 0; this.Y = 0; this.ST = 0x04; this.SP = 0xFF; this.PrevNMI = 0;
     }
+
+    static reset(): void { Cycles = 0; SamePage = 0; IR[0] = 0; ST[0] = 0; X[0] = 0; Y[0] = 0; A[0] = 0; SP[0] = 0; T[0] = 0; PC[0] = 0; Addr[0] = 0; PrevPC[0] = 0; }
 
     loadReg(): void { PC[0] = this.PC; SP[0] = this.SP; ST[0] = this.ST; A[0] = this.A; X[0] = this.X; Y[0] = this.Y; }
     storeReg(): void { this.PC = PC[0]; this.SP = SP[0]; this.ST = ST[0]; this.A = A[0]; this.X = X[0]; this.Y = Y[0]; }
@@ -150,8 +169,8 @@ export class CPU {
     static setVbyAdd(M: number) { ST[0] &= ~V; ST[0] |= ((~(T[0] ^ M)) & (T[0] ^ A[0]) & N) >> 1; } //calculate V-flag from A and T (previous A) and input2 (Memory)
     static setNZCbySub(val: Short): Short { ST[0] &= ~(N | Z | C); ST[0] |= (val[0] & N) | Number(val[0] >= 0); val[0] &= 0xFF; ST[0] |= (Number(!(val[0])) << 1); return val; }
 
-    static push(value: number): void { C64.RAMbank[0x100 + SP[0]] = value; --SP[0]; SP[0] &= 0xFF; } //push a value to stack
-    static pop(): number { ++SP[0]; SP[0] &= 0xFF; return C64.RAMbank[0x100 + SP[0]]; } //pop a value from stack
+    static push(value: number): void { C64.RAMbank[STACK + SP[0]] = value; --SP[0]; SP[0] &= 0xFF; } //push a value to stack
+    static pop(): number { ++SP[0]; SP[0] &= 0xFF; return C64.RAMbank[STACK + SP[0]]; } //pop a value from stack
 
     emulateCPU(): number { //the CPU emulation for SID/PRG playback (ToDo: CIA/VIC-IRQ/NMI/RESET vectors, BCD-mode)
         // const C64: C64 = C64; //could be a parameter but function-call is faster this way if only 1 main CPU exists
@@ -339,7 +358,7 @@ export class CPU {
 
             if ((IR[0] & 0x1F) == 0x10) { //BPL/BMI/BVC/BVS/BCC/BCS/BNE/BEQ  relative branch
                 ++PC[0];
-                T[0] = rd(PC[0])[0]; if (T[0] & 0x80) T[0] -= 0x100;
+                T[0] = rd(PC[0])[0]; if (T[0] & 0x80) T[0] -= 0x0100;
                 if (IR[0] & 0x20) {
                     if (ST[0] & BranchFlags[IR[0] >> 6]) { PC[0] += T[0]; Cycles = 3; }
                 }
@@ -362,7 +381,7 @@ export class CPU {
 
                     case 0: if (!(IR[0] & 4)) { //BRK / NOP-absolute/abs,x/zp/zp,x
                         push((PC[0] + 2 - 1) >> 8); push(((PC[0] + 2 - 1) & 0xFF)); push((ST[0] | B)); ST[0] |= I; //BRK
-                        PC[0] = rd(0xFFFE)[0] + (rd(0xFFFF)[0] << 8) - 1; Cycles = 7;
+                        PC[0] = rd(IRQ + 0)[0] + (rd(IRQ + 1)[0] << 8) - 1; Cycles = 7;
                     }
                     else if (IR[0] == 0x1C) Cycles -= SamePage; //NOP abs,x
                         break;
@@ -438,17 +457,17 @@ export class CPU {
 
     //handle entering into IRQ and NMI interrupt
     handleCPUinterrupts(): boolean {
-        const push = (value: number): void => { C64.RAMbank[0x100 + this.SP] = value; --this.SP; this.SP &= 0xFF; } //push a value to stack
+        const push = (value: number): void => { C64.RAMbank[STACK + this.SP] = value; --this.SP; this.SP &= 0xFF; } //push a value to stack
 
         if (C64.NMI > this.PrevNMI) { //if IRQ and NMI at the same time, NMI is serviced first
             push(this.PC >> 8); push((this.PC & 0xFF)); push(this.ST); this.ST |= I;
-            this.PC = MEM.readMem(0xFFFA)[0] + (MEM.readMem(0xFFFB)[0] << 8); //NMI-vector
+            this.PC = MEM.readMem(NMI + 0)[0] + (MEM.readMem(NMI + 1)[0] << 8); //NMI-vector
             this.PrevNMI = C64.NMI;
             return true;
         }
         else if (C64.IRQ && !(this.ST & I)) {
             push(this.PC >> 8); push((this.PC & 0xFF)); push(this.ST); this.ST |= I;
-            this.PC = MEM.readMem(0xFFFE)[0] + (MEM.readMem(0xFFFF)[0] << 8); //maskable IRQ-vector
+            this.PC = MEM.readMem(IRQ + 0)[0] + (MEM.readMem(IRQ + 1)[0] << 8); //maskable IRQ-vector
             this.PrevNMI = C64.NMI;
             return true;
         }

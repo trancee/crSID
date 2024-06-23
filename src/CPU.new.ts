@@ -4,6 +4,7 @@ import { UnsignedChar, UnsignedShort, Short, Int } from "./types";
 
 import { C64 } from "./C64";
 import { MEM } from "./MEM";
+import { NMI } from "./CPU";
 
 // StatusFlagBitValues
 const
@@ -468,7 +469,7 @@ export class CPU extends Address {
 
         if (C64.NMI > this.PrevNMI) { //if IRQ and NMI at the same time, NMI is serviced first
             push(this.PC >> 8); push((this.PC & 0xFF)); push(this.ST); this.ST |= I;
-            this.PC = MEM.readMem(0xFFFA)[0] + (MEM.readMem(0xFFFB)[0] << 8); //NMI-vector
+            this.PC = MEM.readMem(NMI + 0)[0] + (MEM.readMem(NMI + 1)[0] << 8); //NMI-vector
             this.PrevNMI = C64.NMI;
             return true;
         }

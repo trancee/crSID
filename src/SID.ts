@@ -1,5 +1,7 @@
 //cRSID SID emulation engine
 
+// https://github.com/hpwit/SID6581
+
 import { UnsignedChar, Char, UnsignedShort, Short, UnsignedInt, Int, debugArray } from "./types"
 
 import { C64 } from "./C64"

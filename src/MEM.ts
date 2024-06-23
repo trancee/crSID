@@ -3,6 +3,7 @@
 import { UnsignedChar } from "./types";
 
 import { C64 } from "./C64";
+import { IRQ, NMI } from "./CPU";
 
 export const
     ROM_IRQreturnCode: UnsignedChar = new UnsignedChar([0xAD, 0x0D, 0xDC, 0x68, 0xA8, 0x68, 0xAA, 0x68, 0x40]); //CIA1-acknowledge IRQ-return
@@ -56,8 +57,8 @@ export class MEM {
         for (let i = 0; i < ROM_NMIstartCode.length; ++i) C64.ROMbanks[0xFE43 + i] = ROM_NMIstartCode[i];
         for (let i = 0; i < ROM_IRQBRKstartCode.length; ++i) C64.ROMbanks[0xFF48 + i] = ROM_IRQBRKstartCode[i];
 
-        C64.ROMbanks[0xFFFB] = 0xFE; C64.ROMbanks[0xFFFA] = 0x43; //ROM NMI-vector
-        C64.ROMbanks[0xFFFF] = 0xFF; C64.ROMbanks[0xFFFE] = 0x48; //ROM IRQ-vector
+        C64.ROMbanks[NMI + 1] = 0xFE; C64.ROMbanks[NMI + 0] = 0x43; //ROM NMI-vector
+        C64.ROMbanks[IRQ + 1] = 0xFF; C64.ROMbanks[IRQ + 0] = 0x48; //ROM IRQ-vector
 
         //copy KERNAL & BASIC ROM contents into the RAM under them? (So PSIDs that don't select bank correctly will work better.)
         for (let i = 0xA000; i < 0x10000; ++i) C64.RAMbank[i] = C64.ROMbanks[i];

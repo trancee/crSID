@@ -79,7 +79,33 @@ const BgCyan = "\x1b[46m"
 const BgWhite = "\x1b[47m"
 const BgGray = "\x1b[100m"
 
-export const debugArray = (name: string, array: Uint8Array | Int16Array | Int32Array | Int | UnsignedShort, length?: number): string => {
-    return `${name}(${length || array.length})\t[ ${array.subarray(0, length || array.length).join(", ")} ]`
-    // return `${Dim}${name}(${length || array.length})${Reset}\t[ ${FgYellow}${array.subarray(0, length || array.length).join(", ")}${Reset} ]`
+const cols = 0x20
+
+export const debugArray = (name: string, array: Uint8Array | Int16Array | Int32Array | Int | UnsignedShort, length?: number, offset?: number): string => {
+    const b = array.subarray(offset, (offset || 0) + (length || array.length))
+    console.log(`b:${b.length} r:${b.length % cols}`)
+    let _ = ``
+    let s = `    ${Dim}${Underscore}`
+    for (let c = 0; c < cols; c++) {
+        s += `${c.toString(16).padStart(2, "0")} `
+    }
+    _ += s
+    for (let r = 0; r < b.length / cols; r++) {
+        let s = `${Reset}\n${Dim}${(r * cols).toString(16).padStart(3, "0")}|${Reset}${BgBlack}`
+        for (let c = 0; c < cols; c++) {
+            const v = b[c + r * cols]
+            if (v === 0) s += `${FgGray}`
+            else s += `${FgWhite}`
+            s += `${v.toString(16).padStart(2, "0")} `
+        }
+        _ += s + `${Reset}`
+    }
+    return _
+    return `${Dim}${name}(${length || array.length})${Reset}\t[ ${FgYellow}${[...array.subarray(offset, (offset || 0) + (length || array.length))]
+        .map((x, i) => `${i.toString(16).padStart(2, "0")}|` + x.toString(16).padStart(2, "0"))
+        .join(" ")
+        .replaceAll("00", `  `)
+        .toUpperCase()}${Reset} ]`
+    // return `${name}(${length || array.length})\t[ ${array.subarray(offset, (offset || 0) + (length || array.length)).join(", ")} ]`
+    // return `${Dim}${name}(${length || array.length})${Reset}\t[ ${FgYellow}${array.subarray(offset, (offset || 0) + (length || array.length)).join(", ")}${Reset} ]`
 }

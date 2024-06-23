@@ -2,7 +2,7 @@
 
 import { UnsignedChar, Char, UnsignedInt, Int, UnsignedShort, Short } from "./types"
 
-import { CPU } from "./CPU"
+import { CPU, RESET } from "./CPU"
 import { MEM } from "./MEM"
 import { SID } from "./SID"
 import { CIA } from "./CIA"
@@ -225,7 +225,7 @@ export class C64 {
         C64.SID[1].PrevNonFiltedSample = 0; C64.SID[1].PrevFilterInputSample = 0;
         C64.CIA[1].initCIAchip(); C64.CIA[2].initCIAchip();
         MEM.initMem();
-        C64.CPU = new CPU((MEM.readMem(0xFFFD)[0] << 8) + MEM.readMem(0xFFFC)[0]);
+        C64.CPU = new CPU((MEM.readMem(RESET + 1)[0] << 8) + MEM.readMem(RESET + 0)[0]);
         C64.IRQ = C64.NMI = 0;
         if (C64.HighQualitySID) {
             if (C64.SID[2]) {
