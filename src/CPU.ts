@@ -5,9 +5,23 @@ import { UnsignedChar, UnsignedShort, Short, Int } from "./types";
 import { C64 } from "./C64";
 import { MEM } from "./MEM";
 
-// StatusFlagBitValues
+/**
+ * Processor Flags
+ *
+ * The Processor flags are the bits of the 6502's 8-bit processor status register.
+ * The behavior of many instructions is influenced by the state of one or more processor flags at the time of execution.
+ * Additionally, some instructions may change the state of one or more flags.
+ */
 export const
-    N = 0x80, V = 0x40, U = 0x20, B = 0x10, D = 0x08, I = 0x04, Z = 0x02, C = 0x01, NO_FLAGS = 0x00
+    N = 0x80, // Negative: Set when an operation results in a negative number
+    V = 0x40, // Overflow: Set when a signed addition or subtraction results in an overflow
+    _ = 0x20, // Unused: This bit of the processor status register is not used
+    B = 0x10, // Break: Set when a BRK instruction is executed
+    D = 0x08, // Decimal Mode: When set, certain instructions operate in decimal rather than binary mode
+    I = 0x04, // Interrupt Mask: When set, interrupt requests are ignored
+    Z = 0x02, // Zero: Set when an operation results in a zero
+    C = 0x01, // Carry: Set when an unsigned addition or subtraction results in an overflow
+    NO_FLAGS = 0x00
 
 const
     FlagSwitches: UnsignedChar = new UnsignedChar([0x01, 0x21, 0x04, 0x24, 0x00, 0x40, 0x08, 0x28])
